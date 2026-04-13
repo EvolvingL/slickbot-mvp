@@ -1050,35 +1050,49 @@ app.post("/api/public-chat", chatLimiter, async (req, res) => {
   const demo = publicDemoSessions.get(demoId);
   if (!demo) return res.status(404).json({ error: "Demo session not found. Please scan your site again." });
 
+  // Hard cap for demo sessions
+  const userMsgCount = demo.messages.filter(m => m.role === "user").length;
+  if (userMsgCount >= 20) {
+    return res.json({ reply: "We've had quite a lengthy chat — I think the best thing is for someone from the team to give you a ring. Do get in touch directly if you need anything further.", ended: true });
+  }
+
   demo.messages.push({ role: "user", content: message });
+
+  // Build a synthetic config from the scanned content so buildSystemPrompt works identically
+  const demoCfg = {
+    ...DEFAULT_CONFIG,
+    bizName: demo.bizName || "",
+    scannedContent: demo.scannedContent || "",
+  };
 
   try {
     const fetch = (await import("node-fetch")).default;
-    const systemPrompt = `You are Gloria, an AI receptionist. You are currently in a live demo for a potential Gloria customer who has scanned their own business website.
-
-Your role: answer questions as if you are the receptionist for the business whose website was scanned. Be warm, professional, and knowledgeable about the business.
-
-BUSINESS KNOWLEDGE:
-${demo.scannedContent || "No business information available yet."}
-
-${demo.bizName ? `BUSINESS NAME: ${demo.bizName}` : ""}
-
-Keep responses concise and helpful. This is a demo — if asked about pricing or signing up for Gloria, briefly mention they can get started from £49/mo at the top of the page.`;
-
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
       body: JSON.stringify({
         model: "claude-haiku-4-5-20251001",
-        max_tokens: 400,
-        system: systemPrompt,
-        messages: demo.messages.slice(-10).map(m => ({ role: m.role, content: m.content })),
+        max_tokens: 500,
+        system: buildSystemPrompt(demoCfg, "chat"),
+        messages: demo.messages.slice(-20),
       }),
     });
     const data = await r.json();
     if (!r.ok) { console.error("[PublicChat]", data); return res.status(500).json({ error: "Chat error." }); }
 
-    const reply = data.content?.[0]?.text || "I'm sorry, I didn't quite catch that.";
+    let reply = data.content?.[0]?.text || "Something went wrong — shall we try that again?";
+
+    // Apply same moderation token handling as main chat
+    const modToken = Object.keys(WARNING_MESSAGES || {}).find(t => reply.includes(t));
+    if (modToken) {
+      const modMessages = {
+        GLORIA_OFFTOPIC_WARNING: "I'm only set up to help with enquiries for this business — is there something I can help you with?",
+        GLORIA_ABUSE_WARNING:    "I'm afraid I'm not going to be able to continue this conversation. If you have a genuine enquiry, you're very welcome to get back in touch.",
+        GLORIA_IDLE_WARNING:     "I think we've covered things — if anything else comes up do feel free to get back in touch. Have a good day.",
+      };
+      reply = modMessages[modToken] || reply;
+    }
+
     demo.messages.push({ role: "assistant", content: reply });
     res.json({ reply });
   } catch (err) {
