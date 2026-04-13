@@ -3,7 +3,7 @@
  * < 4KB gzipped, async, zero impact on host page performance
  */
 (function(w, d, key) {
-  if (!key || key === '%%WIDGET_KEY%%') return; // key not substituted yet
+  if (!key) return;
   if (w.__gloria) return; // already loaded
   w.__gloria = true;
 
