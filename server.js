@@ -949,6 +949,144 @@ app.post("/api/scan", requireAdmin, async (req, res) => {
   res.end();
 });
 
+// ── Public demo scan (unauthenticated, in-memory only, rate-limited) ──────────
+const publicDemoSessions = new Map(); // demoId -> { scannedContent, bizName, messages }
+const publicScanLimiter = rateLimit({ windowMs: 60_000 * 10, max: 5, message: { error: "Too many scans. Please wait a few minutes." } });
+
+app.post("/api/public-scan", publicScanLimiter, async (req, res) => {
+  const { url, demoId } = req.body;
+  if (!url) return res.status(400).json({ error: "URL required." });
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+
+  function send(data) { res.write(`data: ${JSON.stringify(data)}\n\n`); }
+
+  const steps = [
+    "Fetching your website…",
+    "Reading page content…",
+    "Extracting services and pricing…",
+    "Reviewing contact information…",
+    "Building Gloria's knowledge…",
+    "Preparing your receptionist…",
+  ];
+
+  let scrapedText = "";
+  let detectedBizName = "";
+
+  try {
+    send({ step: steps[0], progress: 10 });
+    const fetch = (await import("node-fetch")).default;
+    const resp = await fetch(url, { timeout: 8000, headers: { "User-Agent": "Mozilla/5.0 GloriaBot/1.0" } });
+    const html = await resp.text();
+    send({ step: steps[1], progress: 30 });
+
+    const { load } = require("cheerio");
+    const $ = load(html);
+
+    const ogName = $("meta[property='og:site_name']").attr("content");
+    const titleTag = $("title").text().split(/[|\-–—]/)[0].trim();
+    const headerSelectors = [
+      "header .logo", "header .brand", "header [class*='logo']", "header [class*='brand']",
+      "nav .logo", "nav .brand", "nav [class*='logo']", "nav [class*='brand']",
+      ".navbar-brand", "[class*='site-title']", "[class*='site-name']",
+      "header h1", "header h2",
+    ];
+    let selectorName = "";
+    for (const sel of headerSelectors) {
+      const txt = $(sel).first().text().trim().replace(/\s+/g, " ");
+      if (txt && txt.length > 1 && txt.length < 80) { selectorName = txt; break; }
+    }
+    const logoAlt = $("header img[alt], nav img[alt]").first().attr("alt") || "";
+    const cleanAlt = logoAlt.length > 1 && logoAlt.length < 80 ? logoAlt : "";
+    detectedBizName = ogName || selectorName || cleanAlt || titleTag || "";
+    detectedBizName = detectedBizName.replace(/\s*[\|\-–—].*$/, "").trim();
+
+    $("script, style, nav, footer, header, iframe, noscript, .cookie-banner, [class*='cookie']").remove();
+    scrapedText = $("body").text().replace(/\s+/g, " ").trim().slice(0, 6000);
+    if (detectedBizName) scrapedText = `BUSINESS NAME: ${detectedBizName}.\n${scrapedText}`;
+
+    send({ step: steps[2], progress: 50 });
+    send({ step: steps[3], progress: 65 });
+
+    const claudeResp = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 1000,
+        messages: [{ role: "user", content: `Extract key business information from this website text. Return a clean summary including: business name, all services, pricing, contact details, hours, location, and unique selling points.\n\nWEBSITE TEXT:\n${scrapedText}` }],
+      }),
+    });
+    const claudeData = await claudeResp.json();
+    const summary = claudeData.content?.[0]?.text || scrapedText.slice(0, 1000);
+
+    send({ step: steps[4], progress: 85 });
+    await new Promise(r => setTimeout(r, 300));
+    send({ step: steps[5], progress: 95 });
+    await new Promise(r => setTimeout(r, 200));
+
+    // Store in memory — never touches the real DB
+    const id = demoId || uuid();
+    publicDemoSessions.set(id, { scannedContent: summary, bizName: detectedBizName, messages: [] });
+    // Clean up after 30 minutes
+    setTimeout(() => publicDemoSessions.delete(id), 30 * 60 * 1000);
+
+    send({ step: "Scan complete", progress: 100, done: true, summary, detectedBizName, demoId: id });
+  } catch (err) {
+    console.error("[PublicScan] Error:", err.message);
+    send({ step: "Could not reach the site — please check the URL and try again.", progress: 100, done: true, summary: "", detectedBizName: "" });
+  }
+
+  res.end();
+});
+
+// ── Public demo chat (unauthenticated, uses in-memory session) ────────────────
+app.post("/api/public-chat", chatLimiter, async (req, res) => {
+  const { demoId, message } = req.body;
+  if (!demoId || !message) return res.status(400).json({ error: "demoId and message required." });
+
+  const demo = publicDemoSessions.get(demoId);
+  if (!demo) return res.status(404).json({ error: "Demo session not found. Please scan your site again." });
+
+  demo.messages.push({ role: "user", content: message });
+
+  try {
+    const fetch = (await import("node-fetch")).default;
+    const systemPrompt = `You are Gloria, an AI receptionist. You are currently in a live demo for a potential Gloria customer who has scanned their own business website.
+
+Your role: answer questions as if you are the receptionist for the business whose website was scanned. Be warm, professional, and knowledgeable about the business.
+
+BUSINESS KNOWLEDGE:
+${demo.scannedContent || "No business information available yet."}
+
+${demo.bizName ? `BUSINESS NAME: ${demo.bizName}` : ""}
+
+Keep responses concise and helpful. This is a demo — if asked about pricing or signing up for Gloria, briefly mention they can get started from £49/mo at the top of the page.`;
+
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 400,
+        system: systemPrompt,
+        messages: demo.messages.slice(-10).map(m => ({ role: m.role, content: m.content })),
+      }),
+    });
+    const data = await r.json();
+    if (!r.ok) { console.error("[PublicChat]", data); return res.status(500).json({ error: "Chat error." }); }
+
+    const reply = data.content?.[0]?.text || "I'm sorry, I didn't quite catch that.";
+    demo.messages.push({ role: "assistant", content: reply });
+    res.json({ reply });
+  } catch (err) {
+    console.error("[PublicChat] Error:", err.message);
+    res.status(500).json({ error: "Connection error." });
+  }
+});
+
 // ── Moderation: translate Gloria's warning tokens into actions ────────────────
 const WARNING_MESSAGES = {
   GLORIA_OFFTOPIC_WARNING: "I'm only set up to help with enquiries for this business — I can't assist with anything outside of that. Is there something I can help you with here?",

@@ -407,6 +407,12 @@ textarea.ai{min-height:56px;resize:vertical}
   <span class="nav-wordmark">G<em>loria</em></span>
   <div class="nav-divider"></div>
   <span class="nav-descriptor">AI Receptionist</span>
+  <!-- Public tabs (unauthenticated) -->
+  <div class="nav-tabs" id="nav-tabs-public">
+    <button class="nav-tab active" id="tab-landing" onclick="switchView('setup')">Home</button>
+    <button class="nav-tab" id="tab-public-demo" onclick="switchView('public-demo')">Try Demo</button>
+  </div>
+  <!-- Admin tabs (authenticated) -->
   <div class="nav-tabs" id="nav-tabs-admin" style="display:none">
     <button class="nav-tab" id="tab-demo" onclick="switchView('demo')">Admin</button>
     <button class="nav-tab" id="tab-qa" onclick="requireAdmin('qa')">Sessions</button>
@@ -507,6 +513,65 @@ textarea.ai{min-height:56px;resize:vertical}
 
       <p class="terms">By proceeding you accept our <a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a>.</p>
     </div>
+  </div>
+</div>
+
+<!-- ════════ PUBLIC DEMO VIEW ════════ -->
+<div class="view" id="view-public-demo" style="display:none;background:var(--obsidian);align-items:center;justify-content:center;background-image:radial-gradient(ellipse 80% 60% at 50% -10%,rgba(201,169,110,.07) 0%,transparent 65%)">
+  <div style="display:flex;flex-direction:column;align-items:center;gap:24px;width:100%;max-width:900px;padding:32px 24px;max-height:calc(100vh - 52px);overflow-y:auto">
+
+    <!-- Header -->
+    <div style="text-align:center">
+      <div style="font-size:9px;letter-spacing:4px;text-transform:uppercase;color:var(--gold);margin-bottom:10px;font-weight:500">Live Demo</div>
+      <h2 style="font-family:var(--serif);font-size:28px;font-weight:300;color:var(--white);line-height:1.2;margin-bottom:8px">Try Gloria on <em style="color:var(--gold);font-style:italic">your website</em></h2>
+      <p style="font-size:12px;color:var(--silver);line-height:1.8;max-width:480px">Paste your business URL below. Gloria will scan it and be ready to answer questions as your AI receptionist — just as she would for your customers.</p>
+    </div>
+
+    <!-- URL scan row -->
+    <div style="width:100%;max-width:560px">
+      <div style="display:flex;gap:10px;margin-bottom:10px">
+        <input class="url-input" id="demo-url-input" placeholder="https://www.yourbusiness.co.uk" style="flex:1">
+        <button class="btn btn-gold" id="demo-scan-btn" onclick="startPublicScan()">Scan &amp; Chat</button>
+      </div>
+      <div id="demo-scan-box" style="display:none" class="scan-box">
+        <div class="scan-head">
+          <div class="scan-pulse" id="demo-scan-pulse"></div>
+          <span class="scan-title" id="demo-scan-title">Scanning…</span>
+        </div>
+        <div class="scan-log" id="demo-scan-log"></div>
+        <div class="progress-bar"><div class="progress-fill" id="demo-progress-fill" style="width:0%"></div></div>
+        <div id="demo-scan-error" style="display:none;margin-top:10px;padding:10px 12px;background:#2a1212;border:1px solid #7a2020;border-radius:8px;font-size:11px;color:#e07070;font-family:monospace;word-break:break-all;"></div>
+      </div>
+    </div>
+
+    <!-- Chat window (shown after scan) -->
+    <div id="demo-chat-wrap" style="display:none;width:100%;max-width:420px">
+      <div class="preview-label" style="text-align:center;margin-bottom:12px">Gloria is ready — start a conversation</div>
+      <div class="chat-window" style="height:480px">
+        <div class="chat-header">
+          <div class="chat-avatar">G</div>
+          <div>
+            <div class="chat-header-name">Gloria</div>
+            <div class="chat-header-status"><div class="online-dot"></div>&nbsp;Available now</div>
+          </div>
+          <div class="chat-biz-name" id="demo-biz-name">—</div>
+        </div>
+        <div class="chat-msgs" id="demo-chat-msgs"></div>
+        <div class="quick-replies" id="demo-quick-replies"></div>
+        <div class="chat-input-bar">
+          <textarea class="chat-input" id="demo-chat-input" rows="1" placeholder="Type a message…"></textarea>
+          <button class="send-btn" id="demo-send-btn" onclick="sendDemoMessage()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          </button>
+        </div>
+        <div class="powered">Powered by <em>Gloria</em> · Intelligent Reception</div>
+      </div>
+      <div style="text-align:center;margin-top:16px">
+        <p style="font-size:11px;color:var(--silver);margin-bottom:10px">Ready to add Gloria to your site?</p>
+        <button class="btn btn-gold" onclick="openAuthModal()" style="justify-content:center">Get Started — from £49/mo →</button>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -935,6 +1000,8 @@ async function init() {
     }
   } catch(e) {}
 
+  // Not logged in — show public homepage
+  updateNavAuth();
   switchView('setup');
 }
 
@@ -955,6 +1022,7 @@ function selectPlan(plan) {
 function updateNavAuth() {
   const isAuthed = currentUser?.subscribed;
   document.getElementById('nav-tabs-admin').style.display = isAuthed ? 'flex' : 'none';
+  document.getElementById('nav-tabs-public').style.display = isAuthed ? 'none' : 'flex';
   document.getElementById('nav-signin-btn').style.display = isAuthed ? 'none' : '';
   document.getElementById('nav-signout-btn').style.display = isAuthed ? '' : 'none';
 }
@@ -1182,8 +1250,8 @@ function applyPlanUI(plan) {
 function switchView(v) {
   document.querySelectorAll('.view').forEach(el => { el.style.display = 'none'; el.classList.remove('active'); });
   document.querySelectorAll('.nav-tab').forEach(el => el.classList.remove('active'));
-  const views = { setup: 'view-setup', demo: 'view-demo', qa: 'view-qa', bookings: 'view-bookings', triage: 'view-triage' };
-  const tabs  = { setup: 'tab-setup', demo: 'tab-demo', qa: 'tab-qa', bookings: 'tab-bookings', triage: 'tab-triage' };
+  const views = { setup: 'view-setup', 'public-demo': 'view-public-demo', demo: 'view-demo', qa: 'view-qa', bookings: 'view-bookings', triage: 'view-triage' };
+  const tabs  = { setup: 'tab-landing', 'public-demo': 'tab-public-demo', demo: 'tab-demo', qa: 'tab-qa', bookings: 'tab-bookings', triage: 'tab-triage' };
   const el = document.getElementById(views[v]);
   if (el) { el.style.display = 'flex'; el.classList.add('active'); }
   const tab = document.getElementById(tabs[v]);
@@ -1191,6 +1259,7 @@ function switchView(v) {
   if (v === 'qa') loadSessions();
   if (v === 'bookings') loadBookings();
   if (v === 'triage') loadTriage();
+  if (v === 'public-demo') initPublicDemo();
 }
 
 function requireAdmin(targetView) {
@@ -1836,6 +1905,181 @@ document.addEventListener('input', e => {
 document.addEventListener('keydown', e => {
   if (e.target.id === 'chat-input' && e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault(); sendMessage();
+  }
+});
+
+// ── Public Demo ───────────────────────────────────────────────────────────────
+let publicDemoId = null;
+let publicDemoMessages = [];
+
+function initPublicDemo() {
+  // Reset if switching to the tab
+}
+
+async function startPublicScan() {
+  const url = document.getElementById('demo-url-input').value.trim();
+  if (!url) return showToast('Please enter your website URL');
+
+  const btn = document.getElementById('demo-scan-btn');
+  btn.disabled = true;
+  document.getElementById('demo-url-input').disabled = true;
+  document.getElementById('demo-scan-box').style.display = 'block';
+  document.getElementById('demo-chat-wrap').style.display = 'none';
+  document.getElementById('demo-scan-log').innerHTML = '';
+  document.getElementById('demo-progress-fill').style.width = '0%';
+  document.getElementById('demo-scan-error').style.display = 'none';
+  document.getElementById('demo-scan-pulse').style.display = '';
+  document.getElementById('demo-scan-title').textContent = 'Scanning…';
+
+  let resp;
+  try {
+    resp = await fetch('/api/public-scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, demoId: publicDemoId })
+    });
+  } catch (err) {
+    document.getElementById('demo-scan-error').textContent = 'Network error: ' + err.message;
+    document.getElementById('demo-scan-error').style.display = 'block';
+    btn.disabled = false;
+    document.getElementById('demo-url-input').disabled = false;
+    return;
+  }
+
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const parts = buf.split('\n\n');
+      buf = parts.pop();
+      for (const part of parts) {
+        const line = part.replace(/^data: /, '').trim();
+        if (!line) continue;
+        try {
+          const d = JSON.parse(line);
+          if (d.error) {
+            document.getElementById('demo-scan-error').textContent = d.error;
+            document.getElementById('demo-scan-error').style.display = 'block';
+            continue;
+          }
+          const logEl = document.getElementById('demo-scan-log');
+          const span = document.createElement('div');
+          span.innerHTML = `<span style="margin-right:6px;${d.done ? 'color:var(--gold)' : ''}">›</span>${d.step}`;
+          logEl.appendChild(span);
+          document.getElementById('demo-progress-fill').style.width = d.progress + '%';
+          document.getElementById('demo-scan-title').textContent = d.done ? 'Scan complete' : 'Analysing…';
+          if (d.done) {
+            document.getElementById('demo-scan-pulse').style.display = 'none';
+            if (d.demoId) {
+              publicDemoId = d.demoId;
+              publicDemoMessages = [];
+              document.getElementById('demo-biz-name').textContent = d.detectedBizName || '—';
+              document.getElementById('demo-chat-msgs').innerHTML = '';
+              document.getElementById('demo-quick-replies').innerHTML = '';
+              // Short delay then show chat
+              setTimeout(() => {
+                document.getElementById('demo-chat-wrap').style.display = 'block';
+                startPublicChat(d.detectedBizName);
+              }, 600);
+            }
+          }
+        } catch {}
+      }
+    }
+  } catch (streamErr) {
+    document.getElementById('demo-scan-error').textContent = 'Connection lost: ' + streamErr.message;
+    document.getElementById('demo-scan-error').style.display = 'block';
+  }
+
+  btn.disabled = false;
+  document.getElementById('demo-url-input').disabled = false;
+}
+
+function startPublicChat(bizName) {
+  const msgs = document.getElementById('demo-chat-msgs');
+  const timeOfDayStr = (() => {
+    const h = new Date().getHours();
+    return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+  })();
+  const greeting = `${timeOfDayStr}. I'm Gloria — I'm the receptionist here${bizName ? ' at ' + bizName : ''}. How may I assist you today?`;
+  appendPublicMessage('bot', greeting);
+
+  // Quick replies
+  const qr = document.getElementById('demo-quick-replies');
+  qr.innerHTML = '';
+  ['Our services', 'Opening hours', 'Request a quote', 'Contact us'].forEach(text => {
+    const btn = document.createElement('button');
+    btn.className = 'qr';
+    btn.textContent = text;
+    btn.onclick = () => sendPublicQuickReply(text);
+    qr.appendChild(btn);
+  });
+}
+
+function appendPublicMessage(role, text) {
+  const msgs = document.getElementById('demo-chat-msgs');
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+  if (role === 'bot') {
+    div.innerHTML = `<div class="msg-av">G</div><div class="msg-bubble">${escHtml(text)}</div>`;
+  } else {
+    div.innerHTML = `<div class="msg-bubble">${escHtml(text)}</div>`;
+  }
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function sendPublicQuickReply(text) {
+  document.getElementById('demo-quick-replies').innerHTML = '';
+  document.getElementById('demo-chat-input').value = text;
+  sendDemoMessage();
+}
+
+async function sendDemoMessage() {
+  const inp = document.getElementById('demo-chat-input');
+  const msg = inp.value.trim();
+  if (!msg || !publicDemoId) return;
+  inp.value = '';
+  inp.style.height = 'auto';
+
+  appendPublicMessage('user', msg);
+  document.getElementById('demo-send-btn').disabled = true;
+
+  // Typing indicator
+  const msgs = document.getElementById('demo-chat-msgs');
+  const typing = document.createElement('div');
+  typing.className = 'typing-wrap';
+  typing.innerHTML = '<div class="msg-av">G</div><div class="typing-bubble"><div class="typing-dots"><span></span><span></span><span></span></div></div>';
+  msgs.appendChild(typing);
+  msgs.scrollTop = msgs.scrollHeight;
+
+  try {
+    const r = await fetch('/api/public-chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ demoId: publicDemoId, message: msg })
+    });
+    typing.remove();
+    const data = await r.json();
+    if (!r.ok) {
+      appendPublicMessage('bot', data.error || 'Something went wrong. Please try again.');
+    } else {
+      appendPublicMessage('bot', data.reply);
+    }
+  } catch (err) {
+    typing.remove();
+    appendPublicMessage('bot', 'Connection error. Please try again.');
+  }
+  document.getElementById('demo-send-btn').disabled = false;
+}
+
+document.addEventListener('keydown', e => {
+  if (e.target.id === 'demo-chat-input' && e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault(); sendDemoMessage();
   }
 });
 
