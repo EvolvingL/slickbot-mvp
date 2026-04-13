@@ -508,24 +508,61 @@ textarea.ai{min-height:56px;resize:vertical}
 </div>
 
 <!-- ════════ AUTH MODAL ════════ -->
-<div id="auth-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;">
-  <div style="background:var(--charcoal);border:1px solid var(--pewter);border-radius:16px;padding:32px;width:360px;max-width:90vw;">
-    <div style="font-family:var(--serif);font-size:22px;font-weight:300;color:var(--pearl);margin-bottom:4px;" id="auth-modal-title">Create your account</div>
-    <div style="font-size:11px;color:var(--silver);margin-bottom:24px;" id="auth-modal-sub">You'll be taken to payment after registering.</div>
-    <div id="auth-error" style="display:none;background:#2a1212;border:1px solid #7a2020;border-radius:8px;padding:8px 12px;font-size:11px;color:#e07070;margin-bottom:14px;"></div>
-    <div class="fld" style="margin-bottom:12px">
-      <label style="font-size:10px;color:var(--silver);letter-spacing:.5px;text-transform:uppercase;display:block;margin-bottom:6px">Email</label>
-      <input class="inp" id="auth-email" type="email" placeholder="you@yourbusiness.co.uk" style="width:100%;box-sizing:border-box">
+<div id="auth-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.7);align-items:center;justify-content:center;">
+  <div style="position:relative;background:var(--charcoal);border:1px solid var(--pewter);border-radius:16px;padding:32px;width:360px;max-width:90vw;">
+
+    <!-- Step 1: Checkout (email only) -->
+    <div id="auth-step-checkout">
+      <div style="font-family:var(--serif);font-size:22px;font-weight:300;color:var(--pearl);margin-bottom:4px;">Get started</div>
+      <div style="font-size:11px;color:var(--silver);margin-bottom:24px;">Enter your email to continue to payment.</div>
+      <div id="auth-error-checkout" style="display:none;background:#2a1212;border:1px solid #7a2020;border-radius:8px;padding:8px 12px;font-size:11px;color:#e07070;margin-bottom:14px;"></div>
+      <div class="fld" style="margin-bottom:20px">
+        <label style="font-size:10px;color:var(--silver);letter-spacing:.5px;text-transform:uppercase;display:block;margin-bottom:6px">Email</label>
+        <input class="inp" id="auth-email" type="email" placeholder="you@yourbusiness.co.uk" style="width:100%;box-sizing:border-box">
+      </div>
+      <button class="btn btn-gold" id="checkout-btn" onclick="goToCheckout()" style="width:100%;justify-content:center;margin-bottom:12px">Continue to Payment →</button>
+      <div style="text-align:center;font-size:10px;color:var(--silver)">
+        Already have an account?
+        <button onclick="showLoginStep()" style="background:none;border:none;color:var(--gold);cursor:pointer;font-size:10px;padding:0 4px;">Sign in</button>
+      </div>
     </div>
-    <div class="fld" style="margin-bottom:20px">
-      <label style="font-size:10px;color:var(--silver);letter-spacing:.5px;text-transform:uppercase;display:block;margin-bottom:6px">Password</label>
-      <input class="inp" id="auth-password" type="password" placeholder="Min. 8 characters" style="width:100%;box-sizing:border-box">
+
+    <!-- Step 2: Register (after returning from Stripe) -->
+    <div id="auth-step-register" style="display:none">
+      <div style="font-family:var(--serif);font-size:22px;font-weight:300;color:var(--pearl);margin-bottom:4px;">Create your password</div>
+      <div style="font-size:11px;color:var(--silver);margin-bottom:24px;">Payment confirmed — set a password to activate your account.</div>
+      <div id="auth-error-register" style="display:none;background:#2a1212;border:1px solid #7a2020;border-radius:8px;padding:8px 12px;font-size:11px;color:#e07070;margin-bottom:14px;"></div>
+      <div class="fld" style="margin-bottom:12px">
+        <label style="font-size:10px;color:var(--silver);letter-spacing:.5px;text-transform:uppercase;display:block;margin-bottom:6px">Email</label>
+        <input class="inp" id="register-email" type="email" style="width:100%;box-sizing:border-box" readonly>
+      </div>
+      <div class="fld" style="margin-bottom:20px">
+        <label style="font-size:10px;color:var(--silver);letter-spacing:.5px;text-transform:uppercase;display:block;margin-bottom:6px">Password</label>
+        <input class="inp" id="register-password" type="password" placeholder="Min. 8 characters" style="width:100%;box-sizing:border-box">
+      </div>
+      <button class="btn btn-gold" id="register-btn" onclick="submitRegister()" style="width:100%;justify-content:center;">Activate Account →</button>
     </div>
-    <button class="btn btn-gold" id="auth-submit-btn" onclick="submitAuth()" style="width:100%;justify-content:center;margin-bottom:12px">Continue to Payment →</button>
-    <div style="text-align:center;font-size:10px;color:var(--silver)">
-      <span id="auth-toggle-text">Already have an account?</span>
-      <button onclick="toggleAuthMode()" style="background:none;border:none;color:var(--gold);cursor:pointer;font-size:10px;padding:0 4px;" id="auth-toggle-btn">Sign in</button>
+
+    <!-- Step 3: Login (existing users) -->
+    <div id="auth-step-login" style="display:none">
+      <div style="font-family:var(--serif);font-size:22px;font-weight:300;color:var(--pearl);margin-bottom:4px;">Sign in</div>
+      <div style="font-size:11px;color:var(--silver);margin-bottom:24px;">Welcome back.</div>
+      <div id="auth-error-login" style="display:none;background:#2a1212;border:1px solid #7a2020;border-radius:8px;padding:8px 12px;font-size:11px;color:#e07070;margin-bottom:14px;"></div>
+      <div class="fld" style="margin-bottom:12px">
+        <label style="font-size:10px;color:var(--silver);letter-spacing:.5px;text-transform:uppercase;display:block;margin-bottom:6px">Email</label>
+        <input class="inp" id="login-email" type="email" placeholder="you@yourbusiness.co.uk" style="width:100%;box-sizing:border-box">
+      </div>
+      <div class="fld" style="margin-bottom:20px">
+        <label style="font-size:10px;color:var(--silver);letter-spacing:.5px;text-transform:uppercase;display:block;margin-bottom:6px">Password</label>
+        <input class="inp" id="login-password" type="password" placeholder="Password" style="width:100%;box-sizing:border-box">
+      </div>
+      <button class="btn btn-gold" id="login-btn" onclick="submitLogin()" style="width:100%;justify-content:center;margin-bottom:12px">Sign in →</button>
+      <div style="text-align:center;font-size:10px;color:var(--silver)">
+        New customer?
+        <button onclick="showCheckoutStep()" style="background:none;border:none;color:var(--gold);cursor:pointer;font-size:10px;padding:0 4px;">Get started</button>
+      </div>
     </div>
+
     <button onclick="closeAuthModal()" style="position:absolute;top:16px;right:16px;background:none;border:none;color:var(--silver);cursor:pointer;font-size:18px;">✕</button>
   </div>
 </div>
@@ -864,11 +901,10 @@ async function init() {
   // Check if returning from Stripe checkout
   const params = new URLSearchParams(location.search);
   if (params.get('checkout') === 'success') {
+    const returnEmail = params.get('email') || '';
     history.replaceState({}, '', '/');
-    showToast('Payment successful — please sign in to continue.');
-    openAuthModal();
-    authMode = 'login';
-    toggleAuthMode();
+    showToast('Payment confirmed — create your password to activate your account.');
+    showRegisterStep(returnEmail);
     return;
   }
 
@@ -911,59 +947,125 @@ function selectPlan(plan) {
 
 // ── Auth modal ─────────────────────────────────────────────────────────────────
 function openAuthModal() {
+  showCheckoutStep();
   document.getElementById('auth-modal').style.display = 'flex';
   document.getElementById('auth-email').focus();
 }
 function closeAuthModal() {
   document.getElementById('auth-modal').style.display = 'none';
 }
-function toggleAuthMode() {
-  authMode = authMode === 'register' ? 'login' : 'register';
-  const isReg = authMode === 'register';
-  document.getElementById('auth-modal-title').textContent = isReg ? 'Create your account' : 'Sign in';
-  document.getElementById('auth-modal-sub').textContent = isReg ? "You'll be taken to payment after registering." : "Welcome back — sign in to access your admin panel.";
-  document.getElementById('auth-submit-btn').textContent = isReg ? 'Continue to Payment →' : 'Sign in →';
-  document.getElementById('auth-toggle-text').textContent = isReg ? 'Already have an account?' : "Don't have an account?";
-  document.getElementById('auth-toggle-btn').textContent = isReg ? 'Sign in' : 'Register';
-  document.getElementById('auth-error').style.display = 'none';
+function showCheckoutStep() {
+  document.getElementById('auth-step-checkout').style.display = 'block';
+  document.getElementById('auth-step-register').style.display = 'none';
+  document.getElementById('auth-step-login').style.display = 'none';
 }
-async function submitAuth() {
+function showRegisterStep(email) {
+  document.getElementById('auth-step-checkout').style.display = 'none';
+  document.getElementById('auth-step-register').style.display = 'block';
+  document.getElementById('auth-step-login').style.display = 'none';
+  document.getElementById('register-email').value = email || '';
+  document.getElementById('register-password').focus();
+  document.getElementById('auth-modal').style.display = 'flex';
+}
+function showLoginStep() {
+  document.getElementById('auth-step-checkout').style.display = 'none';
+  document.getElementById('auth-step-register').style.display = 'none';
+  document.getElementById('auth-step-login').style.display = 'block';
+  document.getElementById('login-email').focus();
+}
+
+async function goToCheckout() {
   const email = document.getElementById('auth-email').value.trim();
-  const password = document.getElementById('auth-password').value;
-  const errEl = document.getElementById('auth-error');
+  const errEl = document.getElementById('auth-error-checkout');
   errEl.style.display = 'none';
+  if (!email) { errEl.textContent = 'Please enter your email.'; errEl.style.display = 'block'; return; }
 
-  if (!email || !password) { errEl.textContent = 'Please enter your email and password.'; errEl.style.display = 'block'; return; }
-
-  const endpoint = authMode === 'register' ? '/api/auth/register' : '/api/auth/login';
-  const btn = document.getElementById('auth-submit-btn');
-  btn.disabled = true; btn.textContent = 'Please wait…';
+  const btn = document.getElementById('checkout-btn');
+  btn.disabled = true; btn.textContent = 'Redirecting…';
 
   try {
-    const r = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
+    const r = await fetch('/api/checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plan: selectedPlan, email })
+    });
     const data = await r.json();
-    if (!r.ok) { errEl.textContent = data.error || 'Something went wrong.'; errEl.style.display = 'block'; btn.disabled = false; btn.textContent = authMode === 'register' ? 'Continue to Payment →' : 'Sign in →'; return; }
-
-    currentUser = { email, subscribed: data.subscribed };
-
-    if (data.subscribed) {
-      // Already subscribed — go straight to scan/admin
-      closeAuthModal();
-      switchView('setup');
+    if (data.url) {
+      window.location.href = data.url;
     } else {
-      // Not subscribed — go to Stripe checkout
-      const checkoutResp = await fetch('/api/checkout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan: selectedPlan, email }) });
-      const checkoutData = await checkoutResp.json();
-      if (checkoutData.url) {
-        window.location.href = checkoutData.url;
-      } else {
-        errEl.textContent = checkoutData.error || 'Payment setup failed.'; errEl.style.display = 'block';
-        btn.disabled = false; btn.textContent = 'Continue to Payment →';
-      }
+      errEl.textContent = data.error || 'Payment setup failed.'; errEl.style.display = 'block';
+      btn.disabled = false; btn.textContent = 'Continue to Payment →';
     }
   } catch(e) {
     errEl.textContent = 'Connection error. Please try again.'; errEl.style.display = 'block';
-    btn.disabled = false; btn.textContent = authMode === 'register' ? 'Continue to Payment →' : 'Sign in →';
+    btn.disabled = false; btn.textContent = 'Continue to Payment →';
+  }
+}
+
+async function submitRegister() {
+  const email = document.getElementById('register-email').value.trim();
+  const password = document.getElementById('register-password').value;
+  const errEl = document.getElementById('auth-error-register');
+  errEl.style.display = 'none';
+  if (!password || password.length < 8) { errEl.textContent = 'Password must be at least 8 characters.'; errEl.style.display = 'block'; return; }
+
+  const btn = document.getElementById('register-btn');
+  btn.disabled = true; btn.textContent = 'Activating…';
+
+  try {
+    const r = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    const data = await r.json();
+    if (!r.ok) { errEl.textContent = data.error || 'Registration failed.'; errEl.style.display = 'block'; btn.disabled = false; btn.textContent = 'Activate Account →'; return; }
+
+    currentUser = { email, subscribed: data.subscribed };
+    closeAuthModal();
+    showToast('Account activated — scanning your site now.');
+    // Auto-trigger scan
+    document.getElementById('scan-btn').click();
+  } catch(e) {
+    errEl.textContent = 'Connection error. Please try again.'; errEl.style.display = 'block';
+    btn.disabled = false; btn.textContent = 'Activate Account →';
+  }
+}
+
+async function submitLogin() {
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  const errEl = document.getElementById('auth-error-login');
+  errEl.style.display = 'none';
+  if (!email || !password) { errEl.textContent = 'Please enter your email and password.'; errEl.style.display = 'block'; return; }
+
+  const btn = document.getElementById('login-btn');
+  btn.disabled = true; btn.textContent = 'Signing in…';
+
+  try {
+    const r = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    const data = await r.json();
+    if (!r.ok) { errEl.textContent = data.error || 'Invalid email or password.'; errEl.style.display = 'block'; btn.disabled = false; btn.textContent = 'Sign in →'; return; }
+
+    currentUser = { email, subscribed: data.subscribed };
+    closeAuthModal();
+    if (data.subscribed) {
+      showToast('Welcome back.');
+      const cfgResp = await fetch('/api/config');
+      config = await cfgResp.json();
+      services = [...(config.services || [])];
+      populateAdmin();
+      if (config.isLive) { switchView('demo'); startChat(); } else { switchView('setup'); }
+    } else {
+      showToast('No active subscription found.');
+    }
+  } catch(e) {
+    errEl.textContent = 'Connection error. Please try again.'; errEl.style.display = 'block';
+    btn.disabled = false; btn.textContent = 'Sign in →';
   }
 }
 

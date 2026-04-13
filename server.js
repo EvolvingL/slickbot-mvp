@@ -564,7 +564,7 @@ app.post("/api/checkout", async (req, res) => {
       payment_method_types: ["card"],
       customer_email: email,
       line_items: [{ price: priceId, quantity: 1 }],
-      success_url: `${BASE_URL}/?checkout=success`,
+      success_url: `${BASE_URL}/?checkout=success&email=${encodeURIComponent(email)}`,
       cancel_url: `${BASE_URL}/`,
       metadata: { plan, email },
     });
