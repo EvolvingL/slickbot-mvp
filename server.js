@@ -584,7 +584,7 @@ app.post("/api/scan", requireAdmin, async (req, res) => {
     const $ = load(html);
 
     // ── Extract business name BEFORE stripping header/nav ──────────────────
-    // Priority order: OG tag, title tag, header/nav brand selectors
+    // Priority order: OG tag, title tag, header/nav brand selectors, logo alt, logo image (vision)
     const ogName = $("meta[property='og:site_name']").attr("content");
     const titleTag = $("title").text().split(/[|\-–—]/)[0].trim();
     const headerSelectors = [
@@ -598,12 +598,60 @@ app.post("/api/scan", requireAdmin, async (req, res) => {
       const txt = $(sel).first().text().trim().replace(/\s+/g, " ");
       if (txt && txt.length > 1 && txt.length < 80) { selectorName = txt; break; }
     }
-    // Also check logo alt text
+    // Check logo alt text
     const logoAlt = $("header img[alt], nav img[alt]").first().attr("alt") || "";
+    const cleanAlt = logoAlt.length > 1 && logoAlt.length < 80 ? logoAlt : "";
 
-    detectedBizName = ogName || selectorName || (logoAlt.length > 1 && logoAlt.length < 80 ? logoAlt : "") || titleTag || "";
-    // Clean up common suffixes like " | Home"
+    detectedBizName = ogName || selectorName || cleanAlt || titleTag || "";
     detectedBizName = detectedBizName.replace(/\s*[\|\-–—].*$/, "").trim();
+
+    // ── If still no name, use Claude vision to read the logo image ───────────
+    if (!detectedBizName || detectedBizName.toLowerCase() === "home") {
+      const logoSrc = $("header img, nav img").first().attr("src") || $("img[class*='logo'], img[id*='logo']").first().attr("src") || "";
+      if (logoSrc) {
+        try {
+          const logoUrl = logoSrc.startsWith("http") ? logoSrc : new URL(logoSrc, url).href;
+          const logoResp = await fetch(logoUrl, { timeout: 5000 });
+          if (logoResp.ok) {
+            const contentType = logoResp.headers.get("content-type") || "image/png";
+            // Only use vision for raster images (not SVG — those can be parsed as text)
+            if (contentType.includes("svg")) {
+              const svgText = await logoResp.text();
+              const svgTextContent = svgText.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 200);
+              if (svgTextContent.length > 1) detectedBizName = svgTextContent.split(/\s+/).slice(0, 5).join(" ");
+            } else {
+              const logoBuffer = await logoResp.buffer();
+              const logoBase64 = logoBuffer.toString("base64");
+              const mediaType = contentType.split(";")[0].trim();
+              const visionResp = await fetch("https://api.anthropic.com/v1/messages", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  "x-api-key": process.env.ANTHROPIC_API_KEY,
+                  "anthropic-version": "2023-06-01",
+                },
+                body: JSON.stringify({
+                  model: "claude-haiku-4-5-20251001",
+                  max_tokens: 50,
+                  messages: [{
+                    role: "user",
+                    content: [
+                      { type: "image", source: { type: "base64", media_type: mediaType, data: logoBase64 } },
+                      { type: "text", text: "What is the company name shown in this logo? Reply with only the company name, nothing else. If you cannot read a name, reply with a single dash." }
+                    ]
+                  }]
+                }),
+              });
+              const visionData = await visionResp.json();
+              const visionName = visionData.content?.[0]?.text?.trim() || "";
+              if (visionName && visionName !== "-" && visionName.length < 80) {
+                detectedBizName = visionName;
+              }
+            }
+          }
+        } catch {}
+      }
+    }
 
     // ── Now strip nav/header and get body text ────────────────────────────
     $("script, style, nav, footer, header, iframe, noscript, .cookie-banner, [class*='cookie']").remove();
