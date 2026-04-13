@@ -1466,7 +1466,7 @@ app.get("/widget.js", (req, res) => {
   if (!key) return res.status(400).send("key required");
 
   try {
-    let script = fs.readFileSync(path.join(__dirname, "public", "widget.js"), "utf8");
+    let script = fs.readFileSync(path.join(__dirname, "widget.template.js"), "utf8");
     const baseUrl = process.env.BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
     script = script
       .replace(/%%WIDGET_KEY%%/g, key)
