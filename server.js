@@ -8,6 +8,7 @@ const { v4: uuid } = require("uuid");
 const rateLimit = require("express-rate-limit");
 const nodemailer = require("nodemailer");
 const { createEvents } = require("ics");
+const { Pool } = require("pg");
 
 const app = express();
 const server = http.createServer(app);
@@ -20,21 +21,35 @@ app.use(express.static(path.join(__dirname, "public")));
 // ── Rate limiting ─────────────────────────────────────────────────────────────
 const chatLimiter = rateLimit({ windowMs: 60_000, max: 30, message: { error: "Too many requests." } });
 
-// ── Data persistence ──────────────────────────────────────────────────────────
-const DATA_FILE     = path.join(__dirname, "data", "config.json");
-const BOOKINGS_FILE = path.join(__dirname, "data", "bookings.json");
+// ── PostgreSQL ────────────────────────────────────────────────────────────────
+const db = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false,
+});
 
-if (!fs.existsSync(path.join(__dirname, "data"))) {
-  fs.mkdirSync(path.join(__dirname, "data"), { recursive: true });
+// Main config key — single-tenant deployment uses this fixed key
+const MAIN_CONFIG_KEY = "main";
+
+async function readConfig(key) {
+  try {
+    const r = await db.query("SELECT config FROM gloria_configs WHERE widget_key=$1", [key]);
+    return r.rows[0]?.config || null;
+  } catch { return null; }
 }
 
-function readData(file, fallback) {
-  try { return JSON.parse(fs.readFileSync(file, "utf8")); }
-  catch { return fallback; }
+async function writeConfig(key, data) {
+  await db.query(`
+    INSERT INTO gloria_configs (widget_key, config, updated_at)
+    VALUES ($1, $2, NOW())
+    ON CONFLICT (widget_key) DO UPDATE SET config=$2, updated_at=NOW()
+  `, [key, JSON.stringify(data)]);
 }
-function writeData(file, data) {
-  fs.writeFileSync(file, JSON.stringify(data, null, 2));
-}
+
+// Legacy file helpers — kept for any non-migrated callers, now no-ops
+const DATA_FILE = "db:main";
+const BOOKINGS_FILE = "db:bookings";
+function readData(file, fallback) { return fallback; }
+function writeData(file, data) {}
 
 // ── Default config ────────────────────────────────────────────────────────────
 const DEFAULT_CONFIG = {
@@ -72,30 +87,30 @@ const DEFAULT_CONFIG = {
 // ── In-memory sessions ────────────────────────────────────────────────────────
 const sessions = {};
 
-// ── Per-IP abuse tracking (warnings + bans) ───────────────────────────────────
-// Persisted to disk so bans survive restarts
-const ABUSE_FILE = path.join(__dirname, "data", "abuse.json");
-function readAbuse() { return readData(ABUSE_FILE, {}); }
-function writeAbuse(d) { writeData(ABUSE_FILE, d); }
-
 function getClientIp(req) {
   return (req.headers["x-forwarded-for"] || req.connection.remoteAddress || "unknown").split(",")[0].trim();
 }
 
-function checkBanned(ip) {
-  const abuse = readAbuse();
-  return abuse[ip]?.banned === true;
+async function checkBanned(ip) {
+  try {
+    const r = await db.query("SELECT data FROM gloria_abuse WHERE ip=$1", [ip]);
+    return r.rows[0]?.data?.banned === true;
+  } catch { return false; }
 }
 
-// Issue a warning; returns { warnings, banned }
-function issueWarning(ip) {
-  const abuse = readAbuse();
-  if (!abuse[ip]) abuse[ip] = { warnings: 0, banned: false, lastWarning: null };
-  abuse[ip].warnings += 1;
-  abuse[ip].lastWarning = new Date().toISOString();
-  if (abuse[ip].warnings >= 3) abuse[ip].banned = true;
-  writeAbuse(abuse);
-  return { warnings: abuse[ip].warnings, banned: abuse[ip].banned };
+async function issueWarning(ip) {
+  try {
+    const r = await db.query("SELECT data FROM gloria_abuse WHERE ip=$1", [ip]);
+    const current = r.rows[0]?.data || { warnings: 0, banned: false };
+    current.warnings = (current.warnings || 0) + 1;
+    current.lastWarning = new Date().toISOString();
+    if (current.warnings >= 3) current.banned = true;
+    await db.query(`
+      INSERT INTO gloria_abuse (ip, data, updated_at) VALUES ($1, $2, NOW())
+      ON CONFLICT (ip) DO UPDATE SET data=$2, updated_at=NOW()
+    `, [ip, JSON.stringify(current)]);
+    return { warnings: current.warnings, banned: current.banned };
+  } catch { return { warnings: 1, banned: false }; }
 }
 
 // ── TTS pre-processing ────────────────────────────────────────────────────────
@@ -410,15 +425,15 @@ async function getOutlookAvailability(cfg, date) {
 // ── ROUTES ────────────────────────────────────────────────────────────────────
 
 // Public config
-app.get("/api/config", (req, res) => {
-  const cfg = readData(DATA_FILE, DEFAULT_CONFIG);
+app.get("/api/config", async (req, res) => {
+  const cfg = (await readConfig(MAIN_CONFIG_KEY)) || DEFAULT_CONFIG;
   const { adminPassword, smtpPass, twilioToken, googleTokens, outlookTokens, ...pub } = cfg;
   res.json(pub);
 });
 
 // Admin login
-app.post("/api/admin/login", (req, res) => {
-  const cfg = readData(DATA_FILE, DEFAULT_CONFIG);
+app.post("/api/admin/login", async (req, res) => {
+  const cfg = (await readConfig(MAIN_CONFIG_KEY)) || DEFAULT_CONFIG;
   const pw = cfg.adminPassword || process.env.ADMIN_PASSWORD || "slick2024";
   if (req.body.password === pw) {
     res.json({ ok: true, token: Buffer.from(pw).toString("base64") });
@@ -427,8 +442,8 @@ app.post("/api/admin/login", (req, res) => {
   }
 });
 
-function requireAdmin(req, res, next) {
-  const cfg = readData(DATA_FILE, DEFAULT_CONFIG);
+async function requireAdmin(req, res, next) {
+  const cfg = (await readConfig(MAIN_CONFIG_KEY)) || DEFAULT_CONFIG;
   const pw = cfg.adminPassword || process.env.ADMIN_PASSWORD || "slick2024";
   const expected = Buffer.from(pw).toString("base64");
   const auth = req.headers.authorization?.replace("Bearer ", "");
@@ -436,16 +451,16 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-app.get("/api/admin/config", requireAdmin, (req, res) => {
-  const cfg = readData(DATA_FILE, DEFAULT_CONFIG);
+app.get("/api/admin/config", requireAdmin, async (req, res) => {
+  const cfg = (await readConfig(MAIN_CONFIG_KEY)) || DEFAULT_CONFIG;
   const { smtpPass, twilioToken, googleTokens, outlookTokens, ...safe } = cfg;
   res.json(safe);
 });
 
-app.post("/api/admin/config", requireAdmin, (req, res) => {
-  const current = readData(DATA_FILE, DEFAULT_CONFIG);
+app.post("/api/admin/config", requireAdmin, async (req, res) => {
+  const current = (await readConfig(MAIN_CONFIG_KEY)) || DEFAULT_CONFIG;
   const updated = { ...current, ...req.body };
-  writeData(DATA_FILE, updated);
+  await writeConfig(MAIN_CONFIG_KEY, updated);
   res.json({ ok: true });
 });
 
@@ -688,8 +703,22 @@ app.post("/api/scan", requireAdmin, async (req, res) => {
     await new Promise(r => setTimeout(r, 300));
     send({ step: steps[5], progress: 95 });
     await new Promise(r => setTimeout(r, 200));
+
+    // Save scanned content + detected biz name to database immediately
+    const existing = (await readConfig(MAIN_CONFIG_KEY)) || DEFAULT_CONFIG;
+    const updated = {
+      ...existing,
+      scannedContent: summary,
+      siteUrl: url,
+    };
+    if (detectedBizName && (!existing.bizName || existing.bizName === "Your Business")) {
+      updated.bizName = detectedBizName;
+    }
+    await writeConfig(MAIN_CONFIG_KEY, updated);
+
     send({ step: "Scan complete", progress: 100, done: true, summary, detectedBizName });
   } catch (err) {
+    console.error("[Scan] Error:", err.message);
     send({ step: "Could not reach the site — add details manually in the admin panel.", progress: 100, done: true, summary: scrapedText.slice(0, 1000) || "", detectedBizName });
   }
 
@@ -723,7 +752,7 @@ app.post("/api/chat", chatLimiter, async (req, res) => {
   const ip = getClientIp(req);
 
   // Check ban
-  if (checkBanned(ip)) {
+  if (await checkBanned(ip)) {
     return res.status(403).json({
       error: "banned",
       reply: "Access to this service has been suspended. Please contact the business directly if you have a genuine enquiry.",
@@ -754,10 +783,8 @@ app.post("/api/chat", chatLimiter, async (req, res) => {
   }
 
   session.messages.push({ role: "user", content: message });
-  const cfgFile = widgetKey
-    ? path.join(__dirname, "data", `widget_${widgetKey}.json`)
-    : DATA_FILE;
-  const cfg = readData(cfgFile, null) || readData(DATA_FILE, DEFAULT_CONFIG);
+  // Load config — per-widget key falls back to main config
+  const cfg = (widgetKey ? await readConfig(widgetKey) : null) || (await readConfig(MAIN_CONFIG_KEY)) || DEFAULT_CONFIG;
 
   try {
     const fetch = (await import("node-fetch")).default;
@@ -842,7 +869,7 @@ app.post("/api/voice/speak", async (req, res) => {
   if (!transcript) return res.status(400).json({ error: "transcript required." });
 
   const ip = getClientIp(req);
-  if (checkBanned(ip)) {
+  if (await checkBanned(ip)) {
     return res.status(403).json({ error: "banned", reply: "Access suspended.", useWebSpeech: true });
   }
 
@@ -864,7 +891,7 @@ app.post("/api/voice/speak", async (req, res) => {
     });
   }
 
-  const cfg = readData(DATA_FILE, DEFAULT_CONFIG);
+  const cfg = (await readConfig(MAIN_CONFIG_KEY)) || DEFAULT_CONFIG;
 
   // Only store and reply on final transcript (not partials)
   if (partial) return res.json({ sessionId: id, ok: true });
@@ -1534,14 +1561,12 @@ app.get("/widget.js", (req, res) => {
 });
 
 // GET /api/widget-config?key=xxx — public config for the chat iframe
-app.get("/api/widget-config", (req, res) => {
+app.get("/api/widget-config", async (req, res) => {
   const { key } = req.query;
   if (!key) return res.status(400).json({ error: "key required" });
 
-  // Try per-widget config first, fall back to main config.json
-  const configFile = path.join(__dirname, "data", `widget_${key}.json`);
-  let cfg = readData(configFile, null);
-  if (!cfg) cfg = readData(DATA_FILE, DEFAULT_CONFIG);
+  // Try per-widget config first, fall back to main config
+  const cfg = (await readConfig(key)) || (await readConfig(MAIN_CONFIG_KEY)) || DEFAULT_CONFIG;
 
   // Return only safe public fields
   const { bizName, greeting, hours, phone, email, services, plan } = cfg;
