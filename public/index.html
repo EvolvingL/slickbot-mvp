@@ -1,0 +1,2519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gloria — The Intelligent Receptionist</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+  /* Palette — understated British luxury */
+  --obsidian:#0a0a0a;
+  --charcoal:#141414;
+  --graphite:#1e1e1e;
+  --pewter:#2a2a2a;
+  --iron:#3d3d3d;
+  --ash:#5a5a5a;
+  --silver:#8a8a8a;
+  --mist:#b8b8b8;
+  --pearl:#e8e4df;
+  --ivory:#f5f2ee;
+  --white:#fdfcfb;
+  /* Accent — restrained gold */
+  --gold:#c9a96e;
+  --gold-light:#e2c99a;
+  --gold-dark:#a07840;
+  /* Chat */
+  --chat-bg:#faf9f7;
+  --chat-border:#e4e0da;
+  /* Semantic */
+  --green:#3d7a5e;
+  --red:#8b3a3a;
+  --amber:#8a6a2e;
+  /* Type */
+  --serif:'Cormorant Garamond',Georgia,serif;
+  --sans:'Inter',system-ui,sans-serif;
+  --r:4px;
+  --r2:8px;
+}
+
+html,body{height:100%;overflow:hidden}
+body{font-family:var(--sans);background:var(--ivory);color:var(--obsidian);display:flex;flex-direction:column;font-size:13px;line-height:1.6}
+
+/* ── NAV ── */
+.nav{display:flex;align-items:center;gap:0;height:52px;background:var(--obsidian);border-bottom:1px solid var(--pewter);flex-shrink:0;z-index:20;padding:0 32px}
+.nav-wordmark{font-family:var(--serif);font-size:22px;font-weight:300;color:var(--white);letter-spacing:3px;text-transform:uppercase;margin-right:24px}
+.nav-wordmark em{color:var(--gold);font-style:normal}
+.nav-divider{width:1px;height:20px;background:var(--pewter);margin:0 20px}
+.nav-descriptor{font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--silver);font-weight:400}
+.nav-tabs{display:flex;gap:0;margin-left:auto}
+.nav-tab{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--silver);padding:0 18px;height:52px;border:none;background:none;cursor:pointer;font-family:var(--sans);font-weight:500;border-bottom:2px solid transparent;transition:all .2s;display:flex;align-items:center}
+.nav-tab:hover{color:var(--pearl);border-bottom-color:var(--iron)}
+.nav-tab.active{color:var(--gold);border-bottom-color:var(--gold)}
+.nav-status{display:flex;align-items:center;gap:7px;font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--green);margin-left:24px;opacity:0;transition:opacity .3s}
+.nav-status.visible{opacity:1}
+.status-dot{width:5px;height:5px;border-radius:50%;background:var(--green);animation:breathe 2.5s ease-in-out infinite}
+
+/* ── VIEWS ── */
+.view{flex:1;overflow:hidden;display:none}
+.view.active{display:flex}
+
+/* ════════ SETUP / ONBOARDING ════════ */
+.setup-view{background:var(--obsidian);align-items:center;justify-content:center;background-image:radial-gradient(ellipse 80% 60% at 50% -10%,rgba(201,169,110,.07) 0%,transparent 65%)}
+.setup-wrap{width:560px;max-height:calc(100vh - 80px);overflow-y:auto}
+.setup-wrap::-webkit-scrollbar{width:0}
+.setup-card{padding:56px 52px;background:var(--charcoal);border:1px solid var(--pewter);border-radius:2px;animation:riseIn .5s cubic-bezier(.22,1,.36,1)}
+.setup-eyebrow{font-size:9px;letter-spacing:4px;text-transform:uppercase;color:var(--gold);margin-bottom:16px;font-weight:500}
+.setup-headline{font-family:var(--serif);font-size:36px;font-weight:300;color:var(--white);line-height:1.2;margin-bottom:8px}
+.setup-headline em{color:var(--gold);font-style:italic}
+.setup-sub{font-size:12px;color:var(--silver);line-height:1.8;margin-bottom:40px}
+.setup-rule{border:none;border-top:1px solid var(--pewter);margin:32px 0}
+.setup-step{display:flex;gap:16px;margin-bottom:28px;align-items:flex-start}
+.step-num{width:24px;height:24px;border-radius:50%;flex-shrink:0;border:1px solid var(--pewter);color:var(--silver);font-size:10px;font-weight:500;display:flex;align-items:center;justify-content:center;margin-top:1px;transition:all .3s;font-family:var(--sans);letter-spacing:0}
+.step-num.done{background:var(--gold);border-color:var(--gold);color:var(--obsidian)}
+.step-label{font-size:12px;font-weight:500;color:var(--pearl);margin-bottom:2px;letter-spacing:.3px}
+.step-desc{font-size:11px;color:var(--ash);line-height:1.7}
+.url-row{display:flex;gap:10px;margin:24px 0}
+.url-input{flex:1;padding:11px 14px;border-radius:var(--r);background:var(--graphite);border:1px solid var(--iron);color:var(--pearl);font-family:var(--sans);font-size:12px;outline:none;transition:border-color .2s;letter-spacing:.3px}
+.url-input:focus{border-color:var(--gold)}
+.url-input::placeholder{color:var(--ash)}
+.url-input:disabled{opacity:.4}
+
+/* Plan toggle */
+.plan-toggle{display:flex;gap:0;border:1px solid var(--pewter);border-radius:var(--r);overflow:hidden;margin-bottom:28px}
+.plan-opt{flex:1;padding:10px;text-align:center;cursor:pointer;background:var(--graphite);color:var(--silver);font-size:11px;font-weight:500;border:none;font-family:var(--sans);letter-spacing:.5px;transition:all .2s}
+.plan-opt.selected{background:var(--gold);color:var(--obsidian)}
+.plan-opt:first-child{border-right:1px solid var(--pewter)}
+.plan-features{font-size:11px;color:var(--silver);line-height:2;margin-bottom:20px}
+.plan-features li{list-style:none;padding-left:16px;position:relative}
+.plan-features li::before{content:'—';position:absolute;left:0;color:var(--gold)}
+.plan-features li.muted{color:var(--ash)}
+.plan-features li.muted::before{color:var(--iron)}
+
+/* Notify prefs */
+.notify-section{background:var(--graphite);border:1px solid var(--pewter);border-radius:var(--r);padding:20px;margin-bottom:20px}
+.notify-label{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--gold);margin-bottom:14px;font-weight:500}
+.radio-group{display:flex;gap:16px;margin-bottom:14px}
+.radio-opt{display:flex;align-items:center;gap:7px;cursor:pointer;color:var(--pearl);font-size:12px}
+.radio-opt input{accent-color:var(--gold)}
+
+/* Generic inputs */
+.fld{margin-bottom:14px}
+.fld label{display:block;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--silver);margin-bottom:6px;font-weight:500}
+.inp{width:100%;padding:9px 12px;border-radius:var(--r);background:var(--graphite);border:1px solid var(--iron);color:var(--pearl);font-family:var(--sans);font-size:12px;outline:none;transition:border-color .2s;resize:none}
+.inp:focus{border-color:var(--gold)}
+.inp::placeholder{color:var(--ash)}
+textarea.inp{min-height:64px;resize:vertical}
+.inp:disabled{opacity:.4}
+
+/* Buttons */
+.btn{padding:10px 22px;border-radius:var(--r);border:none;cursor:pointer;font-family:var(--sans);font-size:11px;font-weight:500;letter-spacing:1.5px;text-transform:uppercase;transition:all .2s;white-space:nowrap;display:inline-flex;align-items:center;gap:7px}
+.btn-gold{background:var(--gold);color:var(--obsidian)}
+.btn-gold:hover:not(:disabled){background:var(--gold-light)}
+.btn-gold:disabled{opacity:.4;cursor:not-allowed}
+.btn-outline{background:transparent;color:var(--silver);border:1px solid var(--pewter)}
+.btn-outline:hover{border-color:var(--mist);color:var(--pearl)}
+.btn-ghost{background:var(--graphite);color:var(--silver);border:1px solid var(--iron)}
+.btn-ghost:hover{background:var(--pewter);color:var(--pearl)}
+.btn-danger{background:transparent;color:var(--red);border:1px solid #4a2020}
+.btn-danger:hover{background:#2a1010}
+.btn-sm{padding:7px 14px;font-size:10px}
+.btn-xs{padding:5px 10px;font-size:9px}
+.btn-icon{padding:7px;border-radius:var(--r);background:var(--graphite);border:1px solid var(--iron);color:var(--silver);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s}
+.btn-icon:hover{border-color:var(--gold);color:var(--gold)}
+
+/* Scan progress */
+.scan-box{background:var(--graphite);border:1px solid var(--pewter);border-radius:var(--r);padding:18px;margin-top:4px}
+.scan-head{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.scan-pulse{width:6px;height:6px;border-radius:50%;background:var(--gold);animation:breathe .8s ease-in-out infinite;flex-shrink:0}
+.scan-title{font-size:11px;font-weight:500;color:var(--pearl);letter-spacing:.5px}
+.scan-log{font-size:10px;color:var(--ash);font-family:var(--sans);line-height:2.2}
+.scan-log .ok{color:var(--gold)}
+.progress-bar{height:1px;background:var(--iron);margin-top:14px;overflow:hidden}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--gold-dark),var(--gold));transition:width .4s ease}
+.scan-actions{margin-top:16px;display:flex;gap:10px}
+.terms{font-size:10px;color:var(--ash);text-align:center;margin-top:20px;line-height:1.9;letter-spacing:.3px}
+.terms a{color:var(--silver);text-decoration:none;border-bottom:1px solid var(--iron)}
+
+/* ════════ MAIN SPLIT VIEW ════════ */
+.main-view{display:flex;overflow:hidden}
+
+/* Admin panel */
+.admin-panel{width:300px;flex-shrink:0;background:var(--charcoal);border-right:1px solid var(--pewter);display:flex;flex-direction:column;overflow:hidden}
+.admin-head{padding:20px 20px 14px;border-bottom:1px solid var(--pewter);flex-shrink:0}
+.admin-eyebrow{font-size:9px;letter-spacing:3px;text-transform:uppercase;color:var(--gold);margin-bottom:4px;font-weight:500}
+.admin-title{font-family:var(--serif);font-size:18px;font-weight:300;color:var(--white);letter-spacing:.5px}
+.admin-sub{font-size:10px;color:var(--silver);margin-top:3px}
+.admin-body{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:6px}
+.admin-body::-webkit-scrollbar{width:2px}
+.admin-body::-webkit-scrollbar-thumb{background:var(--pewter)}
+.section{background:var(--graphite);border:1px solid var(--pewter);border-radius:var(--r);overflow:hidden}
+.section-head{padding:9px 12px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;user-select:none;transition:background .15s}
+.section-head:hover{background:rgba(255,255,255,.02)}
+.section-label{font-size:9px;font-weight:500;letter-spacing:2px;text-transform:uppercase;color:var(--mist)}
+.section-caret{font-size:8px;color:var(--ash);transition:transform .2s}
+.section-body{padding:12px;border-top:1px solid var(--pewter);display:flex;flex-direction:column;gap:8px}
+.field label{display:block;font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--ash);margin-bottom:5px;font-weight:500}
+.ai{width:100%;padding:8px 10px;border-radius:var(--r);background:var(--charcoal);border:1px solid var(--iron);color:var(--pearl);font-family:var(--sans);font-size:11px;outline:none;transition:border-color .2s;resize:none}
+.ai:focus{border-color:var(--gold)}
+.ai::placeholder{color:var(--ash)}
+textarea.ai{min-height:56px;resize:vertical}
+.tags-wrap{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px}
+.tag{display:inline-flex;align-items:center;gap:5px;background:var(--pewter);color:var(--mist);padding:3px 9px;border-radius:var(--r);font-size:10px;letter-spacing:.3px}
+.tag button{background:none;border:none;color:var(--ash);cursor:pointer;font-size:12px;line-height:1;padding:0;transition:color .15s}
+.tag button:hover{color:var(--red)}
+.add-tag{display:flex;gap:6px}
+.add-tag .ai{flex:1}
+.admin-footer{padding:12px;border-top:1px solid var(--pewter);flex-shrink:0;display:flex;gap:6px}
+.admin-footer .btn{flex:1;font-size:9px;justify-content:center}
+.plan-badge{display:inline-block;font-size:8px;letter-spacing:2px;text-transform:uppercase;padding:2px 7px;border-radius:var(--r);font-weight:600}
+.plan-badge.free{background:var(--graphite);color:var(--silver);border:1px solid var(--iron)}
+.plan-badge.paid{background:var(--gold);color:var(--obsidian)}
+.locked-notice{font-size:10px;color:var(--ash);padding:10px 12px;text-align:center;line-height:1.7;border-top:1px dashed var(--iron)}
+
+/* Live sessions panel */
+.sessions-panel{position:absolute;right:0;top:0;bottom:0;width:300px;background:var(--charcoal);border-left:1px solid var(--pewter);display:flex;flex-direction:column;transform:translateX(100%);transition:transform .3s cubic-bezier(.22,1,.36,1);z-index:10}
+.sessions-panel.open{transform:translateX(0)}
+.sessions-head{padding:16px;border-bottom:1px solid var(--pewter);flex-shrink:0;display:flex;align-items:center;gap:8px}
+.sessions-title{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--pearl);font-weight:500;flex:1}
+.sessions-list{flex:1;overflow-y:auto;padding:8px}
+.sessions-list::-webkit-scrollbar{width:2px}
+.sessions-list::-webkit-scrollbar-thumb{background:var(--pewter)}
+.live-session{background:var(--graphite);border:1px solid var(--pewter);border-radius:var(--r);padding:10px 12px;cursor:pointer;margin-bottom:6px;transition:border-color .15s}
+.live-session:hover,.live-session.active{border-color:var(--gold)}
+.ls-id{font-size:9px;letter-spacing:1.5px;color:var(--silver);font-family:var(--sans);margin-bottom:3px;text-transform:uppercase}
+.ls-preview{font-size:11px;color:var(--mist);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ls-meta{font-size:9px;color:var(--ash);margin-top:4px;display:flex;gap:8px;align-items:center}
+.ls-taken{color:var(--gold);font-weight:500}
+
+/* Chat area */
+.chat-area{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;background:var(--ivory);position:relative;overflow:hidden}
+.chat-area::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 70% 50% at 50% 0%,rgba(201,169,110,.04) 0%,transparent 60%);pointer-events:none}
+.preview-label{font-size:9px;letter-spacing:3px;text-transform:uppercase;color:var(--silver);font-weight:500}
+.chat-window{width:390px;height:580px;background:var(--white);border-radius:2px;box-shadow:0 32px 80px rgba(10,10,10,.12),0 4px 24px rgba(10,10,10,.06),0 1px 0 rgba(201,169,110,.15);display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--chat-border)}
+.chat-header{padding:14px 16px;background:var(--obsidian);display:flex;align-items:center;gap:12px;flex-shrink:0;border-bottom:1px solid var(--pewter)}
+.chat-avatar{width:38px;height:38px;border-radius:50%;flex-shrink:0;border:1px solid var(--gold-dark);overflow:hidden;display:flex;align-items:center;justify-content:center;background:var(--charcoal);font-family:var(--serif);font-size:18px;color:var(--gold);font-weight:300;font-style:italic}
+.chat-header-name{font-family:var(--serif);font-size:16px;font-weight:300;color:var(--white);letter-spacing:.5px}
+.chat-header-role{font-size:10px;color:var(--silver);letter-spacing:.5px;margin-top:1px}
+.chat-header-status{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--ash)}
+.online-dot{width:5px;height:5px;border-radius:50%;background:var(--green);animation:breathe 2.5s ease-in-out infinite}
+.chat-biz-name{font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--gold);margin-left:auto;text-align:right;max-width:100px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chat-msgs{flex:1;overflow-y:auto;padding:16px 14px;display:flex;flex-direction:column;gap:12px;background:var(--chat-bg)}
+.chat-msgs::-webkit-scrollbar{width:2px}
+.chat-msgs::-webkit-scrollbar-thumb{background:var(--chat-border)}
+.msg{display:flex;gap:8px;max-width:100%;animation:riseIn .2s ease}
+.msg.user{flex-direction:row-reverse}
+.msg-bubble{padding:10px 14px;border-radius:var(--r2);font-size:12px;line-height:1.65;max-width:85%;word-break:break-word}
+.msg.bot .msg-bubble{background:var(--white);color:var(--obsidian);border:1px solid var(--chat-border);border-bottom-left-radius:var(--r);box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.msg.user .msg-bubble{background:var(--obsidian);color:var(--pearl);border-bottom-right-radius:var(--r)}
+.msg-av{width:30px;height:30px;border-radius:50%;flex-shrink:0;margin-top:2px;background:var(--charcoal);border:1px solid var(--pewter);display:flex;align-items:center;justify-content:center;font-family:var(--serif);font-size:14px;color:var(--gold);font-style:italic}
+.msg-time{font-size:9px;color:var(--silver);margin-top:3px;padding:0 14px;align-self:flex-end}
+.typing-wrap{display:flex;gap:8px;align-items:flex-end;animation:riseIn .2s ease}
+.typing-bubble{padding:12px 16px;background:var(--white);border:1px solid var(--chat-border);border-radius:var(--r2);border-bottom-left-radius:var(--r);box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.typing-dots{display:flex;gap:4px;align-items:center}
+.typing-dots span{width:5px;height:5px;border-radius:50%;background:var(--mist);animation:pulse-dot 1.4s ease-in-out infinite}
+.typing-dots span:nth-child(2){animation-delay:.2s}
+.typing-dots span:nth-child(3){animation-delay:.4s}
+.quick-replies{display:flex;flex-wrap:wrap;gap:5px;padding:0 14px 10px}
+.qr{font-family:var(--sans);font-size:10px;font-weight:500;padding:5px 12px;border-radius:var(--r);background:var(--white);border:1px solid var(--chat-border);color:var(--ash);cursor:pointer;transition:all .15s;white-space:nowrap;letter-spacing:.3px}
+.qr:hover{border-color:var(--gold);color:var(--gold-dark)}
+.chat-input-bar{padding:10px 12px;background:var(--white);border-top:1px solid var(--chat-border);display:flex;gap:8px;align-items:flex-end;flex-shrink:0}
+.chat-input{flex:1;padding:8px 12px;border-radius:var(--r2);border:1px solid var(--chat-border);font-family:var(--sans);font-size:12px;outline:none;resize:none;max-height:80px;color:var(--obsidian);background:var(--chat-bg);transition:border-color .2s;line-height:1.5}
+.chat-input:focus{border-color:var(--gold);background:var(--white)}
+.send-btn{width:34px;height:34px;border-radius:var(--r);border:none;cursor:pointer;background:var(--obsidian);color:var(--gold);display:flex;align-items:center;justify-content:center;transition:all .2s;flex-shrink:0}
+.send-btn:hover:not(:disabled){background:var(--pewter)}
+.send-btn:disabled{opacity:.3;cursor:not-allowed}
+.voice-btn{width:34px;height:34px;border-radius:var(--r);border:1px solid var(--chat-border);cursor:pointer;background:var(--white);color:var(--silver);display:flex;align-items:center;justify-content:center;transition:all .2s;flex-shrink:0}
+.voice-btn:hover{border-color:var(--gold);color:var(--gold-dark)}
+.voice-btn.active{background:var(--obsidian);border-color:var(--gold);color:var(--gold);animation:voice-ring 1.8s ease-in-out infinite}
+@keyframes voice-ring{0%,100%{box-shadow:0 0 0 0 rgba(201,169,110,0)}50%{box-shadow:0 0 0 6px rgba(201,169,110,.15)}}
+.powered{text-align:center;font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--silver);padding:6px;background:var(--white);border-top:1px solid var(--chat-border);flex-shrink:0}
+.powered em{color:var(--gold-dark);font-style:normal}
+
+/* ── VOICE CALL UI ── */
+.voice-overlay{position:absolute;inset:0;background:var(--obsidian);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;z-index:20;border-radius:2px;animation:riseIn .25s ease}
+.voice-avatar-ring{width:80px;height:80px;border-radius:50%;border:1px solid var(--gold-dark);display:flex;align-items:center;justify-content:center;position:relative}
+.voice-avatar-ring.speaking::before{content:'';position:absolute;inset:-8px;border-radius:50%;border:1px solid rgba(201,169,110,.3);animation:voice-pulse-ring 1.2s ease-out infinite}
+.voice-avatar-ring.speaking::after{content:'';position:absolute;inset:-16px;border-radius:50%;border:1px solid rgba(201,169,110,.12);animation:voice-pulse-ring 1.2s ease-out .3s infinite}
+@keyframes voice-pulse-ring{from{opacity:1;transform:scale(1)}to{opacity:0;transform:scale(1.3)}}
+.voice-avatar-letter{font-family:var(--serif);font-size:36px;font-weight:300;color:var(--gold);font-style:italic}
+.voice-name{font-family:var(--serif);font-size:20px;font-weight:300;color:var(--white);letter-spacing:1px}
+.voice-status{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--silver)}
+.voice-transcript{font-size:11px;color:var(--ash);max-width:260px;text-align:center;min-height:32px;line-height:1.7;font-style:italic;padding:0 16px}
+.voice-controls{display:flex;gap:12px;margin-top:4px}
+.voice-end-btn{padding:10px 28px;border-radius:var(--r);background:#3a1010;border:1px solid #6a2a2a;color:#e88;font-family:var(--sans);font-size:10px;letter-spacing:2px;text-transform:uppercase;cursor:pointer;font-weight:500;transition:all .2s}
+.voice-end-btn:hover{background:#4a1818}
+.voice-mute-btn{width:40px;height:40px;border-radius:50%;background:var(--graphite);border:1px solid var(--pewter);color:var(--silver);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .2s}
+.voice-mute-btn:hover{border-color:var(--gold);color:var(--gold)}
+.voice-mute-btn.muted{background:var(--pewter);color:var(--pearl)}
+.voice-waveform{display:flex;gap:3px;align-items:center;height:24px}
+.voice-waveform span{width:3px;border-radius:2px;background:var(--gold);opacity:.6;animation:wave-bar 1s ease-in-out infinite}
+.voice-waveform span:nth-child(1){animation-delay:.0s}
+.voice-waveform span:nth-child(2){animation-delay:.1s}
+.voice-waveform span:nth-child(3){animation-delay:.2s}
+.voice-waveform span:nth-child(4){animation-delay:.3s}
+.voice-waveform span:nth-child(5){animation-delay:.4s}
+@keyframes wave-bar{0%,100%{height:4px;opacity:.3}50%{height:20px;opacity:.9}}
+.voice-waveform.idle span{animation:none;height:4px;opacity:.2}
+
+/* Booking confirmation banner */
+.booking-confirm{background:var(--obsidian);border:1px solid var(--gold-dark);border-radius:var(--r);padding:10px 14px;margin:0 14px;font-size:11px;color:var(--gold-light);line-height:1.7;display:flex;flex-direction:column;gap:6px}
+.booking-confirm-title{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--gold);font-weight:500;margin-bottom:2px}
+.booking-calendar-btns{display:flex;gap:6px;flex-wrap:wrap;margin-top:2px}
+.cal-btn{font-size:9px;letter-spacing:1px;padding:4px 10px;border-radius:var(--r);border:1px solid var(--gold-dark);background:transparent;color:var(--gold);cursor:pointer;font-family:var(--sans);transition:all .15s;text-transform:uppercase;font-weight:500;text-decoration:none}
+.cal-btn:hover{background:var(--gold);color:var(--obsidian)}
+
+/* ════════ QA/SESSIONS VIEW ════════ */
+.qa-view{flex-direction:column;background:var(--ivory)}
+.qa-header{padding:20px 32px;background:var(--white);border-bottom:1px solid var(--chat-border);display:flex;align-items:center;gap:16px;flex-shrink:0}
+.qa-eyebrow{font-size:9px;letter-spacing:3px;text-transform:uppercase;color:var(--gold);margin-bottom:3px;font-weight:500}
+.qa-title{font-family:var(--serif);font-size:22px;font-weight:300;color:var(--obsidian)}
+.qa-body{flex:1;overflow-y:auto;padding:24px 32px;display:flex;flex-direction:column;gap:12px}
+.session-card{background:var(--white);border:1px solid var(--chat-border);border-radius:var(--r);overflow:hidden}
+.session-head{padding:12px 16px;display:flex;align-items:center;gap:10px;cursor:pointer;border-bottom:1px solid var(--chat-border)}
+.session-id{font-size:9px;letter-spacing:2px;color:var(--silver);font-family:var(--sans);background:var(--ivory);padding:2px 8px;border-radius:var(--r);text-transform:uppercase}
+.session-badge{font-size:9px;letter-spacing:1px;padding:2px 7px;border-radius:var(--r);font-weight:500;text-transform:uppercase}
+.session-badge.taken{background:rgba(201,169,110,.12);color:var(--gold-dark);border:1px solid rgba(201,169,110,.3)}
+.session-badge.booked{background:rgba(61,122,94,.1);color:var(--green);border:1px solid rgba(61,122,94,.3)}
+.session-meta{font-size:10px;color:var(--silver);margin-left:auto}
+.session-msgs{padding:14px 16px;display:flex;flex-direction:column;gap:8px}
+.log-msg{font-size:11px;line-height:1.6;padding:8px 12px;border-radius:var(--r);max-width:80%}
+.log-msg.user{background:var(--ivory);border:1px solid var(--chat-border);color:var(--obsidian);align-self:flex-end}
+.log-msg.bot{background:var(--obsidian);color:var(--pearl);align-self:flex-start}
+.log-msg.admin{background:rgba(201,169,110,.1);border:1px solid rgba(201,169,110,.25);color:var(--gold-dark);align-self:flex-start}
+.log-role{font-size:9px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:3px;opacity:.6}
+.empty-state{text-align:center;padding:80px 20px;color:var(--silver);font-size:13px;font-family:var(--serif);font-style:italic;font-weight:300;line-height:1.8}
+.session-takeover-bar{padding:10px 16px;border-top:1px solid var(--chat-border);display:flex;gap:8px;align-items:center;background:var(--ivory)}
+.session-takeover-input{flex:1;padding:7px 10px;border-radius:var(--r);border:1px solid var(--chat-border);font-family:var(--sans);font-size:11px;outline:none;background:var(--white)}
+.session-takeover-input:focus{border-color:var(--gold)}
+
+/* ════════ BOOKINGS VIEW ════════ */
+.bookings-view{flex-direction:column;background:var(--ivory)}
+.booking-card{background:var(--white);border:1px solid var(--chat-border);border-radius:var(--r);padding:16px 20px;display:flex;flex-direction:column;gap:6px}
+.booking-card-header{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+.booking-name{font-family:var(--serif);font-size:16px;font-weight:300;color:var(--obsidian)}
+.booking-date{font-size:11px;color:var(--silver)}
+.booking-detail{font-size:11px;color:var(--ash)}
+.booking-cal-row{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+
+/* ════════ TRIAGE VIEW ════════ */
+.triage-view{flex-direction:column;background:var(--ivory)}
+.triage-body{flex:1;overflow:hidden;display:flex;gap:0;}
+.triage-left{width:380px;flex-shrink:0;overflow-y:auto;border-right:1px solid var(--chat-border);background:var(--white);display:flex;flex-direction:column;}
+.triage-right{flex:1;display:flex;flex-direction:column;overflow:hidden;}
+.triage-map{flex:1;min-height:300px;}
+#admin-map{width:100%;height:100%;}
+.triage-scores{padding:16px 20px;border-top:1px solid var(--chat-border);background:var(--white);max-height:220px;overflow-y:auto;}
+.triage-scores-title{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--gold);margin-bottom:10px;font-weight:500;}
+.engineer-score-row{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--ivory);}
+.engineer-score-row:last-child{border-bottom:none;}
+.esc-name{font-size:12px;font-weight:500;color:var(--obsidian);flex:1;}
+.esc-skills{font-size:10px;color:var(--ash);}
+.esc-score{font-size:10px;color:var(--silver);width:60px;text-align:right;}
+.esc-bar{flex:1;height:4px;background:var(--ivory);border-radius:2px;overflow:hidden;}
+.esc-bar-fill{height:100%;background:var(--gold);border-radius:2px;transition:width .4s;}
+.esc-recommended{color:var(--green);font-size:10px;font-weight:600;}
+.assign-btn{
+  font-size:10px;padding:3px 10px;border-radius:10px;border:1px solid var(--chat-border);
+  background:var(--ivory);cursor:pointer;color:var(--ash);transition:all .15s;white-space:nowrap;
+}
+.assign-btn:hover{background:var(--gold);color:var(--obsidian);border-color:var(--gold);}
+.assign-btn.assigned{background:var(--green);color:var(--white);border-color:var(--green);}
+
+/* Booking card triage additions */
+.booking-card.selected{border-color:var(--gold);box-shadow:0 0 0 2px rgba(201,169,110,.2);}
+.booking-card.assigned-card{border-left:3px solid var(--green);}
+.booking-triage-row{display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap;}
+.triage-badge{font-size:9px;letter-spacing:1px;text-transform:uppercase;padding:2px 8px;border-radius:10px;font-weight:600;}
+.tb-unassigned{background:var(--ivory);color:var(--silver);border:1px solid var(--chat-border);}
+.tb-assigned{background:rgba(61,122,94,.1);color:var(--green);border:1px solid rgba(61,122,94,.3);}
+.tb-accepted{background:rgba(61,122,94,.15);color:var(--green);border:1px solid rgba(61,122,94,.4);}
+.tb-en_route{background:rgba(59,130,246,.1);color:#3b82f6;border:1px solid rgba(59,130,246,.3);}
+.tb-on_site{background:rgba(139,92,246,.1);color:#8b5cf6;border:1px solid rgba(139,92,246,.3);}
+.tb-completed{background:var(--ivory);color:var(--silver);border:1px solid var(--chat-border);}
+
+/* Team section */
+.team-member-row{
+  display:flex;align-items:center;gap:10px;padding:10px 12px;
+  background:var(--ivory);border:1px solid var(--chat-border);border-radius:var(--r);margin-bottom:8px;
+}
+.team-avatar{
+  width:32px;height:32px;border-radius:50%;background:var(--gold);flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--serif);font-size:14px;color:var(--obsidian);font-weight:600;
+}
+.team-name{font-size:12px;font-weight:500;color:var(--obsidian);}
+.team-meta{font-size:10px;color:var(--ash);}
+.team-skills{display:flex;gap:4px;flex-wrap:wrap;margin-top:3px;}
+.skill-tag{font-size:9px;padding:1px 7px;border-radius:10px;background:rgba(201,169,110,.12);color:var(--gold-dark);border:1px solid rgba(201,169,110,.25);}
+.team-remove{margin-left:auto;background:none;border:none;color:var(--ash);cursor:pointer;font-size:14px;line-height:1;padding:4px;transition:color .15s;}
+.team-remove:hover{color:var(--red);}
+.team-edit{background:none;border:none;color:var(--ash);cursor:pointer;font-size:11px;padding:4px 8px;transition:color .15s;border-radius:var(--r);}
+.team-edit:hover{background:var(--chat-border);}
+.eng-portal-link{font-size:10px;color:var(--silver);letter-spacing:.5px;}
+
+/* Member form */
+.member-form{background:var(--graphite);border:1px solid var(--pewter);border-radius:var(--r);padding:16px;margin-top:10px;}
+.member-form .field{margin-bottom:10px;}
+.member-form .field:last-child{margin-bottom:0;}
+.member-form label{display:block;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--silver);margin-bottom:5px;font-weight:500;}
+.skills-input-wrap{display:flex;gap:6px;}
+
+/* ════════ LOGIN ════════ */
+.login-overlay{position:fixed;inset:0;background:rgba(10,10,10,.88);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;z-index:200}
+.login-box{background:var(--charcoal);border:1px solid var(--pewter);border-radius:2px;padding:44px;width:360px;box-shadow:0 40px 100px rgba(0,0,0,.6)}
+.login-eyebrow{font-size:9px;letter-spacing:3px;text-transform:uppercase;color:var(--gold);margin-bottom:12px;font-weight:500}
+.login-title{font-family:var(--serif);font-size:26px;font-weight:300;color:var(--white);margin-bottom:6px}
+.login-sub{font-size:11px;color:var(--silver);margin-bottom:28px;line-height:1.7}
+.login-err{font-size:11px;color:#c07070;margin-top:6px}
+
+/* ════════ TOAST ════════ */
+.toast{position:fixed;bottom:28px;right:28px;background:var(--obsidian);border:1px solid var(--pewter);border-left:2px solid var(--gold);color:var(--pearl);padding:12px 18px;border-radius:var(--r);font-size:11px;box-shadow:0 12px 40px rgba(0,0,0,.4);animation:riseIn .3s cubic-bezier(.22,1,.36,1);z-index:999;letter-spacing:.3px}
+
+/* ════════ ONBOARDING STEPS ════════ */
+.onboard-sections{display:flex;flex-direction:column;gap:16px}
+.onboard-step-header{display:flex;align-items:center;gap:10px;cursor:pointer;padding:12px 0;border-bottom:1px solid var(--pewter)}
+.onboard-step-num{font-family:var(--serif);font-size:18px;font-weight:300;color:var(--gold);min-width:24px}
+.onboard-step-label{font-size:11px;font-weight:500;color:var(--pearl);letter-spacing:.5px}
+.onboard-step-check{margin-left:auto;font-size:12px;color:var(--gold);opacity:0;transition:opacity .2s}
+.onboard-step-check.done{opacity:1}
+.onboard-step-body{padding-top:16px;display:flex;flex-direction:column;gap:12px}
+
+/* ── Warning / ban UI ── */
+.warning-banner{margin:4px 14px 0;padding:8px 12px;border-radius:var(--r);font-size:10px;line-height:1.7;letter-spacing:.3px;animation:riseIn .2s ease}
+.warning-banner.warn-1{background:rgba(138,106,46,.12);border:1px solid rgba(138,106,46,.35);color:#c8a060}
+.warning-banner.warn-2{background:rgba(139,58,58,.12);border:1px solid rgba(139,58,58,.35);color:#c07070}
+.warning-banner.warn-3,.warning-banner.banned{background:rgba(139,58,58,.2);border:1px solid rgba(139,58,58,.5);color:#e08080}
+.warning-banner strong{display:block;font-size:9px;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:2px}
+.chat-locked{padding:14px;background:var(--ivory);border-top:1px solid var(--chat-border);text-align:center;font-size:11px;color:var(--silver);line-height:1.7}
+.chat-locked strong{display:block;color:var(--ash);margin-bottom:3px;font-size:10px;letter-spacing:1px;text-transform:uppercase}
+
+/* ════════ KEYFRAMES ════════ */
+@keyframes riseIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes breathe{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.3)}}
+@keyframes pulse-dot{0%,80%,100%{transform:translateY(0);opacity:.5}40%{transform:translateY(-5px);opacity:1}}
+@keyframes shimmer{from{background-position:200% center}to{background-position:-200% center}}
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav class="nav">
+  <span class="nav-wordmark">G<em>loria</em></span>
+  <div class="nav-divider"></div>
+  <span class="nav-descriptor">The Intelligent Receptionist</span>
+  <div class="nav-tabs">
+    <button class="nav-tab" id="tab-setup" onclick="switchView('setup')">Setup</button>
+    <button class="nav-tab" id="tab-demo" onclick="switchView('demo')">Live Preview</button>
+    <button class="nav-tab" id="tab-qa" onclick="requireAdmin('qa')">Sessions</button>
+    <button class="nav-tab" id="tab-bookings" onclick="requireAdmin('bookings')">Bookings</button>
+    <button class="nav-tab" id="tab-triage" onclick="requireAdmin('triage')">Dispatch</button>
+  </div>
+  <div class="nav-status" id="nav-status">
+    <div class="status-dot"></div>
+    <span>Live</span>
+  </div>
+</nav>
+
+<!-- ════════ SETUP VIEW ════════ -->
+<div class="view setup-view" id="view-setup">
+  <div class="setup-wrap">
+    <div class="setup-card">
+      <div class="setup-eyebrow">Gloria · AI Receptionist</div>
+      <h1 class="setup-headline">Your business deserves a<br><em>receptionist of distinction.</em></h1>
+      <p class="setup-sub">Introduce your website and Gloria will be ready to receive your clients — knowledgeable, warm, and entirely professional — within minutes.</p>
+
+      <hr class="setup-rule">
+
+      <!-- Plan selection -->
+      <div style="margin-bottom:20px">
+        <div class="fld"><label>Choose your plan</label></div>
+        <div class="plan-toggle" id="plan-toggle">
+          <button class="plan-opt selected" id="plan-free" onclick="selectPlan('free')">Essential &nbsp;·&nbsp; £5/mo</button>
+          <button class="plan-opt" id="plan-paid" onclick="selectPlan('paid')">Professional &nbsp;·&nbsp; £50/mo</button>
+        </div>
+        <ul class="plan-features" id="plan-features-list">
+          <li>Website scan &amp; auto-configuration</li>
+          <li>Gloria AI receptionist, live on your site 24/7</li>
+          <li>Session &amp; enquiry logs (via admin panel)</li>
+          <li class="muted">Full admin panel — add pricing, FAQs, services — Professional only</li>
+          <li class="muted">SMS or email alerts to your phone — Professional only</li>
+          <li class="muted">Live chat takeover &amp; admin messaging — Professional only</li>
+          <li class="muted">Direct booking with Google, Outlook &amp; iCalendar invites — Professional only</li>
+        </ul>
+      </div>
+
+      <!-- Notify prefs (paid only) -->
+      <div class="notify-section" id="notify-section" style="display:none">
+        <div class="notify-label">Admin notifications <span style="color:var(--silver);font-weight:400;letter-spacing:0;text-transform:none">(required)</span></div>
+        <p style="font-size:10px;color:var(--ash);margin-bottom:14px;line-height:1.8">How should Gloria alert you when a new enquiry or booking arrives?</p>
+        <div class="radio-group">
+          <label class="radio-opt"><input type="radio" name="notify-method" value="sms" checked onchange="toggleNotifyMethod(this.value)"> SMS <span style="font-size:9px;color:var(--gold);margin-left:4px">(Default)</span></label>
+          <label class="radio-opt"><input type="radio" name="notify-method" value="email" onchange="toggleNotifyMethod(this.value)"> Email</label>
+        </div>
+        <div class="fld" id="notify-phone-field">
+          <label>Your mobile number</label>
+          <input class="inp" id="notify-phone" placeholder="+44 7700 900 000" type="tel">
+        </div>
+        <div class="fld" id="notify-email-field" style="display:none">
+          <label>Your email address</label>
+          <input class="inp" id="notify-email-notif" placeholder="you@yourbusiness.co.uk" type="email">
+        </div>
+      </div>
+
+      <hr class="setup-rule" style="margin:20px 0">
+
+      <!-- Step indicators -->
+      <div class="setup-step">
+        <div class="step-num" id="s1">1</div>
+        <div><div class="step-label">Paste your website URL</div><div class="step-desc">Gloria scans your site and learns everything she needs to know about your business.</div></div>
+      </div>
+      <div class="setup-step">
+        <div class="step-num" id="s2">2</div>
+        <div><div class="step-label">Review &amp; refine</div><div class="step-desc">Add additional information — pricing, FAQs, coverage areas, anything Gloria should know.</div></div>
+      </div>
+      <div class="setup-step">
+        <div class="step-num" id="s3">3</div>
+        <div><div class="step-label">Open for business</div><div class="step-desc">Gloria is live, 24 hours a day. Embed on your website or share a direct link.</div></div>
+      </div>
+
+      <div class="url-row">
+        <input class="url-input" id="url-input" placeholder="https://www.yourbusiness.co.uk">
+        <button class="btn btn-gold" id="scan-btn" onclick="startScan()">Scan Site</button>
+      </div>
+
+      <div id="scan-box" style="display:none" class="scan-box">
+        <div class="scan-head">
+          <div class="scan-pulse" id="scan-pulse"></div>
+          <span class="scan-title" id="scan-title">Scanning…</span>
+        </div>
+        <div class="scan-log" id="scan-log"></div>
+        <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+        <div id="scan-actions" class="scan-actions" style="display:none">
+          <button class="btn btn-ghost btn-sm" onclick="switchView('demo')">Customise first</button>
+          <button class="btn btn-ghost btn-sm" id="open-chat-btn" onclick="openChatWindow()" style="display:none">Open Chat ↗</button>
+          <button class="btn btn-gold" style="flex:1" onclick="launchBot()">Open for Business →</button>
+        </div>
+        <div id="scan-error" style="display:none;margin-top:10px;padding:10px 12px;background:#2a1212;border:1px solid #7a2020;border-radius:8px;font-size:11px;color:#e07070;font-family:monospace;word-break:break-all;"></div>
+      </div>
+
+      <p class="terms">By proceeding you accept our <a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a>. The free plan requires no payment details.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ════════ MAIN DEMO VIEW ════════ -->
+<div class="view main-view" id="view-demo" style="display:none">
+
+  <!-- Admin Panel -->
+  <div class="admin-panel">
+    <div class="admin-head">
+      <div class="admin-eyebrow">Configuration</div>
+      <div class="admin-title">Admin Panel</div>
+      <div class="admin-sub" id="admin-status">Loading…</div>
+    </div>
+    <div class="admin-body" id="admin-body">
+
+      <!-- Free plan locked notice -->
+      <div id="free-plan-notice" style="display:none">
+        <div class="locked-notice">
+          The Essential plan (£5/mo) covers website scan and live receptionist. Upgrade to Professional (£50/mo) to customise Gloria's knowledge, enable SMS alerts, and unlock direct bookings.
+          <br><br>
+          <button class="btn btn-gold btn-sm" onclick="openUpgradeModal()" style="width:100%;justify-content:center">Upgrade to Professional</button>
+        </div>
+      </div>
+
+      <div id="paid-admin-sections">
+        <div class="section">
+          <div class="section-head" onclick="toggleSection('identity')">
+            <span class="section-label">Business Identity</span>
+            <span class="section-caret" id="caret-identity">▾</span>
+          </div>
+          <div class="section-body" id="sec-identity">
+            <div class="field"><label>Business name</label><input class="ai" id="f-bizName" placeholder="Your Business"></div>
+            <div class="field"><label>Opening hours</label><input class="ai" id="f-hours" placeholder="Mon–Fri, 9am–5pm"></div>
+            <div class="field"><label>Phone</label><input class="ai" id="f-phone" placeholder="01923 000 000"></div>
+            <div class="field"><label>Email</label><input class="ai" id="f-email" placeholder="hello@yourbusiness.co.uk"></div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-head" onclick="toggleSection('services')">
+            <span class="section-label">Services</span>
+            <span class="section-caret" id="caret-services">▾</span>
+          </div>
+          <div class="section-body" id="sec-services" style="display:none">
+            <div class="tags-wrap" id="service-tags"></div>
+            <div class="add-tag">
+              <input class="ai" id="new-service" placeholder="Add service…">
+              <button class="btn btn-gold btn-xs" onclick="addService()">+</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-head" onclick="toggleSection('pricing')">
+            <span class="section-label">Pricing &amp; Booking</span>
+            <span class="section-caret" id="caret-pricing">▾</span>
+          </div>
+          <div class="section-body" id="sec-pricing" style="display:none">
+            <div class="field"><label>Pricing notes</label><textarea class="ai" id="f-priceHints" placeholder="Emergency callout from £99…"></textarea></div>
+            <div class="field"><label>Payment methods</label><input class="ai" id="f-paymentMethods" placeholder="Card, BACS transfer"></div>
+            <div class="field"><label>Calendar / booking link</label><input class="ai" id="f-calendarLink" placeholder="https://calendly.com/…"></div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-head" onclick="toggleSection('extra')">
+            <span class="section-label">Additional Information</span>
+            <span class="section-caret" id="caret-extra">▾</span>
+          </div>
+          <div class="section-body" id="sec-extra" style="display:none">
+            <div class="field"><label>FAQs &amp; extra info</label><textarea class="ai" id="f-extraInfo" placeholder="Coverage area, policies, FAQs…" style="min-height:72px"></textarea></div>
+            <div class="field"><label>Opening greeting</label><textarea class="ai" id="f-greeting" placeholder="Leave blank to use Gloria's default…"></textarea></div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-head" onclick="toggleSection('notifications')">
+            <span class="section-label">Notifications</span>
+            <span class="section-caret" id="caret-notifications">▾</span>
+          </div>
+          <div class="section-body" id="sec-notifications" style="display:none">
+            <div class="field">
+              <label>Notify method</label>
+              <select class="ai" id="f-adminNotifyMethod">
+                <option value="sms">SMS (default)</option>
+                <option value="email">Email</option>
+              </select>
+            </div>
+            <div class="field"><label>Admin mobile</label><input class="ai" id="f-adminNotifyPhone" placeholder="+447700900000"></div>
+            <div class="field"><label>Admin email</label><input class="ai" id="f-adminNotifyEmail" placeholder="you@yourbusiness.co.uk"></div>
+            <button class="btn btn-ghost btn-sm" onclick="testNotify()" style="width:100%;justify-content:center">Send Test Notification</button>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-head" onclick="toggleSection('team')">
+            <span class="section-label">Team &amp; Engineers</span>
+            <span class="section-caret" id="caret-team">▾</span>
+          </div>
+          <div class="section-body" id="sec-team" style="display:none">
+            <div style="font-size:11px;color:var(--silver);line-height:1.7;margin-bottom:12px">Add your engineers here. Gloria will auto-assign jobs based on skills, location, and workload. Each engineer gets a personal portal login.</div>
+            <div id="team-list"></div>
+            <div id="member-form-wrap"></div>
+            <button class="btn btn-ghost btn-sm" onclick="showMemberForm()" id="add-member-btn" style="width:100%;justify-content:center;margin-top:4px">+ Add Team Member</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="admin-footer">
+      <button class="btn btn-gold" id="save-btn" onclick="saveConfig()">Save Changes</button>
+      <button class="btn btn-ghost btn-sm" onclick="resetChat()">Reset Chat</button>
+    </div>
+  </div>
+
+  <!-- Chat preview -->
+  <div class="chat-area" id="chat-area">
+    <div class="preview-label">Customer view — live preview</div>
+    <div class="chat-window">
+      <div class="chat-header">
+        <div class="chat-avatar">G</div>
+        <div>
+          <div class="chat-header-name">Gloria</div>
+          <div class="chat-header-status"><div class="online-dot"></div>&nbsp;Available now</div>
+        </div>
+        <div class="chat-biz-name" id="chat-biz-name">—</div>
+      </div>
+      <div class="chat-msgs" id="chat-msgs"></div>
+      <div class="quick-replies" id="quick-replies"></div>
+      <div class="chat-input-bar">
+        <textarea class="chat-input" id="chat-input" rows="1" placeholder="Type a message…"></textarea>
+        <button class="voice-btn" id="voice-btn" onclick="toggleVoiceCall()" title="Talk to Gloria">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></svg>
+        </button>
+        <button class="send-btn" id="send-btn" onclick="sendMessage()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </button>
+      </div>
+      <div class="powered">Powered by <em>Gloria</em> · Intelligent Reception</div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════ SESSIONS VIEW ════════ -->
+<div class="view qa-view" id="view-qa" style="display:none;flex-direction:column">
+  <div class="qa-header">
+    <div>
+      <div class="qa-eyebrow">Administration</div>
+      <div class="qa-title">Live Sessions &amp; Logs</div>
+    </div>
+    <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+      <span id="qa-plan-badge"></span>
+      <button class="btn btn-ghost btn-sm" onclick="loadSessions()">Refresh</button>
+      <button class="btn btn-danger btn-sm" onclick="clearSessions()">Clear All</button>
+    </div>
+  </div>
+  <div class="qa-body" id="qa-body">
+    <div class="empty-state">No sessions on record.</div>
+  </div>
+</div>
+
+<!-- ════════ BOOKINGS VIEW ════════ -->
+<div class="view bookings-view" id="view-bookings" style="display:none;flex-direction:column">
+  <div class="qa-header">
+    <div>
+      <div class="qa-eyebrow">Administration</div>
+      <div class="qa-title">Bookings</div>
+    </div>
+    <div style="margin-left:auto;display:flex;gap:8px">
+      <button class="btn btn-ghost btn-sm" onclick="loadBookings()">Refresh</button>
+    </div>
+  </div>
+  <div class="qa-body" id="bookings-body">
+    <div class="empty-state">No bookings yet. Gloria will create entries here when a customer books an appointment.</div>
+  </div>
+</div>
+
+<!-- ════════ TRIAGE / DISPATCH VIEW ════════ -->
+<div class="view triage-view" id="view-triage" style="display:none;flex-direction:column">
+  <div class="qa-header">
+    <div>
+      <div class="qa-eyebrow">Administration</div>
+      <div class="qa-title">Dispatch &amp; Job Triage</div>
+    </div>
+    <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+      <button class="btn btn-ghost btn-sm" onclick="loadTriage()">Refresh</button>
+      <button class="btn btn-gold btn-sm" onclick="autoTriageAll()">Auto-Assign All</button>
+    </div>
+  </div>
+  <div class="triage-body">
+    <!-- Left: booking list -->
+    <div class="triage-left">
+      <div style="padding:12px 16px;border-bottom:1px solid var(--chat-border);font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--silver);font-weight:500">
+        Unassigned &amp; Active Jobs
+      </div>
+      <div id="triage-booking-list" style="padding:12px;flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:8px">
+        <div class="empty-state">Loading…</div>
+      </div>
+    </div>
+    <!-- Right: map + scores -->
+    <div class="triage-right">
+      <div class="triage-map">
+        <div id="admin-map"></div>
+      </div>
+      <div class="triage-scores" id="triage-scores">
+        <div class="triage-scores-title">Select a job to see engineer scores</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Login overlay -->
+<div class="login-overlay" id="login-overlay" style="display:none">
+  <div class="login-box">
+    <div class="login-eyebrow">Gloria · Admin</div>
+    <div class="login-title">Restricted Access</div>
+    <div class="login-sub">Please enter your administration password to continue.</div>
+    <div class="fld"><label>Password</label><input class="inp" type="password" id="login-pw" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()"></div>
+    <div id="login-err" class="login-err" style="display:none">Incorrect password. Please try again.</div>
+    <div style="display:flex;gap:8px;margin-top:20px">
+      <button class="btn btn-outline" onclick="closeLogin()">Cancel</button>
+      <button class="btn btn-gold" style="flex:1;justify-content:center" onclick="doLogin()">Continue</button>
+    </div>
+  </div>
+</div>
+
+<!-- Upgrade modal -->
+<div class="login-overlay" id="upgrade-overlay" style="display:none">
+  <div class="login-box" style="width:420px;max-height:90vh;overflow-y:auto">
+    <div class="login-eyebrow">Professional · £50/mo</div>
+    <div class="login-title">Upgrade your plan</div>
+    <div class="login-sub">A couple of quick things before we unlock everything.</div>
+
+    <!-- Step indicator -->
+    <div style="display:flex;gap:0;margin-bottom:28px;border:1px solid var(--pewter);border-radius:var(--r);overflow:hidden">
+      <div class="upgrade-step-tab active" id="utab-1" style="flex:1;padding:8px;text-align:center;font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--gold);background:rgba(201,169,110,.08);border-right:1px solid var(--pewter);font-weight:500">1 · Contact</div>
+      <div class="upgrade-step-tab" id="utab-2" style="flex:1;padding:8px;text-align:center;font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--ash);font-weight:500">2 · Calendar</div>
+      <div class="upgrade-step-tab" id="utab-3" style="flex:1;padding:8px;text-align:center;font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--ash);font-weight:500;border-left:1px solid var(--pewter)">3 · Confirm</div>
+    </div>
+
+    <!-- Step 1: contact details -->
+    <div id="ustep-1">
+      <p style="font-size:11px;color:var(--silver);margin-bottom:18px;line-height:1.8">How should Gloria alert you when a new enquiry or booking comes in? SMS is on by default — we recommend keeping it that way.</p>
+      <div class="fld">
+        <label>Notification method</label>
+        <div style="display:flex;gap:0;border:1px solid var(--pewter);border-radius:var(--r);overflow:hidden;margin-bottom:0">
+          <button id="umeth-sms" class="plan-opt selected" onclick="setUpgradeMethod('sms')" style="font-size:10px;letter-spacing:1px">SMS <span style="font-size:8px;color:inherit;opacity:.7">(recommended)</span></button>
+          <button id="umeth-email" class="plan-opt" onclick="setUpgradeMethod('email')" style="font-size:10px;letter-spacing:1px">Email</button>
+        </div>
+      </div>
+      <div class="fld" id="ufld-phone">
+        <label>Your mobile number</label>
+        <input class="inp" id="u-phone" type="tel" placeholder="+44 7700 900 000">
+      </div>
+      <div class="fld" id="ufld-email" style="display:none">
+        <label>Your email address</label>
+        <input class="inp" id="u-email-notif" type="email" placeholder="you@yourbusiness.co.uk">
+      </div>
+      <div id="ustep1-err" style="font-size:11px;color:#c07070;margin-bottom:10px;display:none"></div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn btn-outline" onclick="closeUpgradeModal()">Cancel</button>
+        <button class="btn btn-gold" style="flex:1;justify-content:center" onclick="upgradeNext(2)">Continue →</button>
+      </div>
+    </div>
+
+    <!-- Step 2: calendar -->
+    <div id="ustep-2" style="display:none">
+      <p style="font-size:11px;color:var(--silver);margin-bottom:18px;line-height:1.8">Connect your real calendar so Gloria can check your live availability and book directly into it — no double-bookings, no manual syncing.</p>
+
+      <div id="cal-connected-msg" style="display:none;background:rgba(61,122,94,.1);border:1px solid rgba(61,122,94,.3);border-radius:var(--r);padding:12px 14px;margin-bottom:16px;font-size:11px;color:#6aaa8a;line-height:1.7">
+        <strong style="display:block;font-size:9px;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px;color:#3d7a5e">Calendar Connected</strong>
+        <span id="cal-connected-label"></span>
+        <br><a href="#" onclick="disconnectCalendar();return false" style="color:var(--ash);font-size:10px">Disconnect</a>
+      </div>
+
+      <div id="cal-options">
+        <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px">
+          <button class="btn btn-ghost" id="cal-google-btn" onclick="connectCalendar('google')" style="justify-content:flex-start;gap:10px;padding:11px 14px">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            Connect Google Calendar
+          </button>
+          <button class="btn btn-ghost" id="cal-outlook-btn" onclick="connectCalendar('outlook')" style="justify-content:flex-start;gap:10px;padding:11px 14px">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            Connect Outlook Calendar
+          </button>
+        </div>
+        <p style="font-size:10px;color:var(--ash);line-height:1.8;margin-bottom:4px">Connecting is optional — you can always do it later from the admin panel. Without a connected calendar, Gloria will still generate <strong style="color:var(--silver)">Google Calendar</strong>, <strong style="color:var(--silver)">Outlook</strong> and <strong style="color:var(--silver)">iCalendar (.ics)</strong> links for every booking.</p>
+      </div>
+
+      <div id="cal-setup-note" style="font-size:10px;color:var(--ash);padding:10px 12px;background:var(--graphite);border-radius:var(--r);border:1px solid var(--pewter);margin-bottom:16px;line-height:1.8;display:none">
+        To enable OAuth calendar connections, add <code style="color:var(--gold)">GOOGLE_CLIENT_ID</code> / <code style="color:var(--gold)">MICROSOFT_CLIENT_ID</code> to your .env file and set <code style="color:var(--gold)">APP_URL</code> to this server's public URL.
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:4px">
+        <button class="btn btn-outline" onclick="upgradeBack(1)">← Back</button>
+        <button class="btn btn-gold" style="flex:1;justify-content:center" onclick="upgradeNext(3)">Continue →</button>
+      </div>
+    </div>
+
+    <!-- Step 3: confirm -->
+    <div id="ustep-3" style="display:none">
+      <div style="background:var(--graphite);border:1px solid var(--pewter);border-radius:var(--r);padding:16px;margin-bottom:20px;display:flex;flex-direction:column;gap:8px">
+        <div style="font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--gold);margin-bottom:4px;font-weight:500">Your setup</div>
+        <div style="font-size:11px;color:var(--pearl)" id="uconfirm-method"></div>
+        <div style="font-size:11px;color:var(--pearl)" id="uconfirm-dest"></div>
+        <div style="font-size:11px;color:var(--pearl)" id="uconfirm-cal"></div>
+      </div>
+      <p style="font-size:11px;color:var(--silver);line-height:1.8;margin-bottom:20px">Once confirmed, the full admin panel will unlock and you can customise everything — Gloria's knowledge, pricing, services, FAQs, and more.</p>
+      <div id="ustep3-err" style="font-size:11px;color:#c07070;margin-bottom:10px;display:none"></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-outline" onclick="upgradeBack(2)">← Back</button>
+        <button class="btn btn-gold" style="flex:1;justify-content:center" onclick="confirmUpgrade()">Unlock Professional →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast" style="display:none"></div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────────
+let sessionId = null;
+let adminToken = null;
+let config = {};
+let pendingView = null;
+let services = [];
+let selectedPlan = 'free';
+let sessionRefreshInterval = null;
+let lastMessageCount = {};
+
+// ── Init ───────────────────────────────────────────────────────────────────────
+async function init() {
+  try {
+    const r = await fetch('/api/config');
+    config = await r.json();
+    services = [...(config.services || [])];
+    populateAdmin();
+    applyPlanUI(config.plan || 'free');
+    if (config.isLive) {
+      switchView('demo');
+      startChat();
+      if (config.plan === 'paid') document.getElementById('nav-status').classList.add('visible');
+    } else {
+      switchView('setup');
+    }
+  } catch(e) {
+    switchView('setup');
+  }
+}
+
+// ── Plan selection ─────────────────────────────────────────────────────────────
+function selectPlan(plan) {
+  selectedPlan = plan;
+  document.getElementById('plan-free').classList.toggle('selected', plan === 'free');
+  document.getElementById('plan-paid').classList.toggle('selected', plan === 'paid');
+  document.getElementById('notify-section').style.display = plan === 'paid' ? 'block' : 'none';
+  const features = document.getElementById('plan-features-list');
+  features.querySelectorAll('li').forEach((li, i) => {
+    if (plan === 'paid') li.classList.remove('muted');
+    else li.classList.toggle('muted', i >= 3);
+  });
+}
+
+function toggleNotifyMethod(val) {
+  document.getElementById('notify-phone-field').style.display = val === 'sms' ? 'block' : 'none';
+  document.getElementById('notify-email-field').style.display = val === 'email' ? 'block' : 'none';
+}
+
+function applyPlanUI(plan) {
+  const isPaid = plan === 'paid';
+  const freeNotice = document.getElementById('free-plan-notice');
+  const paidSections = document.getElementById('paid-admin-sections');
+  const saveBtn = document.getElementById('save-btn');
+  if (freeNotice) freeNotice.style.display = isPaid ? 'none' : 'block';
+  if (paidSections) paidSections.style.display = isPaid ? 'flex' : 'none';
+  if (paidSections) paidSections.style.flexDirection = 'column';
+  if (paidSections) paidSections.style.gap = '6px';
+  if (saveBtn) saveBtn.style.display = isPaid ? '' : 'none';
+}
+
+// ── Views ──────────────────────────────────────────────────────────────────────
+function switchView(v) {
+  document.querySelectorAll('.view').forEach(el => { el.style.display = 'none'; el.classList.remove('active'); });
+  document.querySelectorAll('.nav-tab').forEach(el => el.classList.remove('active'));
+  const views = { setup: 'view-setup', demo: 'view-demo', qa: 'view-qa', bookings: 'view-bookings', triage: 'view-triage' };
+  const tabs  = { setup: 'tab-setup', demo: 'tab-demo', qa: 'tab-qa', bookings: 'tab-bookings', triage: 'tab-triage' };
+  const el = document.getElementById(views[v]);
+  if (el) { el.style.display = 'flex'; el.classList.add('active'); }
+  const tab = document.getElementById(tabs[v]);
+  if (tab) tab.classList.add('active');
+  if (v === 'qa') loadSessions();
+  if (v === 'bookings') loadBookings();
+  if (v === 'triage') loadTriage();
+}
+
+function requireAdmin(targetView) {
+  if (adminToken) { switchView(targetView); return; }
+  pendingView = targetView;
+  document.getElementById('login-overlay').style.display = 'flex';
+  document.getElementById('login-pw').value = '';
+  document.getElementById('login-err').style.display = 'none';
+  setTimeout(() => document.getElementById('login-pw').focus(), 100);
+}
+
+async function doLogin() {
+  const pw = document.getElementById('login-pw').value;
+  try {
+    const r = await fetch('/api/admin/login', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ password: pw }) });
+    const d = await r.json();
+    if (d.ok) {
+      adminToken = d.token;
+      closeLogin();
+      if (pendingView) { switchView(pendingView); pendingView = null; }
+    } else {
+      document.getElementById('login-err').style.display = 'block';
+    }
+  } catch { document.getElementById('login-err').style.display = 'block'; }
+}
+
+function closeLogin() { document.getElementById('login-overlay').style.display = 'none'; }
+
+// ── Upgrade modal ──────────────────────────────────────────────────────────────
+let upgradeMethod = 'sms';
+
+async function openUpgradeModal() {
+  upgradeMethod = 'sms';
+  upgradeCalendarConnected = config.connectedCalendar || null;
+  setUpgradeMethod('sms');
+  document.getElementById('u-phone').value = config.adminNotifyPhone || '';
+  document.getElementById('u-email-notif').value = config.adminNotifyEmail || '';
+  // Restore calendar state if already connected
+  if (upgradeCalendarConnected && adminToken) {
+    document.getElementById('cal-connected-msg').style.display = 'block';
+    document.getElementById('cal-connected-label').textContent =
+      upgradeCalendarConnected === 'google' ? 'Google Calendar is connected.' : 'Outlook Calendar is connected.';
+    document.getElementById('cal-options').style.opacity = '0.4';
+    document.getElementById('cal-options').style.pointerEvents = 'none';
+  } else {
+    document.getElementById('cal-connected-msg').style.display = 'none';
+    document.getElementById('cal-options').style.opacity = '';
+    document.getElementById('cal-options').style.pointerEvents = '';
+  }
+  document.getElementById('cal-setup-note').style.display = 'none';
+  showUpgradeStep(1);
+  document.getElementById('upgrade-overlay').style.display = 'flex';
+  setTimeout(() => document.getElementById('u-phone').focus(), 100);
+}
+
+function closeUpgradeModal() {
+  document.getElementById('upgrade-overlay').style.display = 'none';
+}
+
+function setUpgradeMethod(method) {
+  upgradeMethod = method;
+  document.getElementById('umeth-sms').classList.toggle('selected', method === 'sms');
+  document.getElementById('umeth-email').classList.toggle('selected', method === 'email');
+  document.getElementById('ufld-phone').style.display = method === 'sms' ? 'block' : 'none';
+  document.getElementById('ufld-email').style.display = method === 'email' ? 'block' : 'none';
+}
+
+function showUpgradeStep(n) {
+  [1, 2, 3].forEach(i => {
+    document.getElementById('ustep-' + i).style.display = i === n ? 'block' : 'none';
+    const tab = document.getElementById('utab-' + i);
+    tab.style.color = i === n ? 'var(--gold)' : 'var(--ash)';
+    tab.style.background = i === n ? 'rgba(201,169,110,.08)' : 'transparent';
+  });
+}
+
+function upgradeNext(step) {
+  if (step === 2) {
+    // Validate contact details
+    const errEl = document.getElementById('ustep1-err');
+    errEl.style.display = 'none';
+    if (upgradeMethod === 'sms' && !document.getElementById('u-phone').value.trim()) {
+      errEl.textContent = 'Please enter your mobile number.';
+      errEl.style.display = 'block';
+      return;
+    }
+    if (upgradeMethod === 'email' && !document.getElementById('u-email-notif').value.trim()) {
+      errEl.textContent = 'Please enter your email address.';
+      errEl.style.display = 'block';
+      return;
+    }
+  }
+  if (step === 3) {
+    // Populate confirm summary
+    const dest = upgradeMethod === 'sms'
+      ? document.getElementById('u-phone').value.trim()
+      : document.getElementById('u-email-notif').value.trim();
+    const cal = document.getElementById('u-calendar').value.trim();
+    document.getElementById('uconfirm-method').textContent = `Notifications via: ${upgradeMethod === 'sms' ? 'SMS' : 'Email'}`;
+    document.getElementById('uconfirm-dest').textContent = `Alerts sent to: ${dest}`;
+    document.getElementById('uconfirm-cal').textContent = upgradeCalendarConnected ? `Calendar: ${upgradeCalendarConnected} connected` : 'Calendar: not connected (you can connect later)';
+  }
+  showUpgradeStep(step);
+}
+
+function upgradeBack(step) {
+  showUpgradeStep(step);
+}
+
+async function confirmUpgrade() {
+  if (!adminToken) { closeUpgradeModal(); requireAdmin('demo'); return; }
+  const errEl = document.getElementById('ustep3-err');
+  errEl.style.display = 'none';
+  const phone = document.getElementById('u-phone').value.trim();
+  const emailNotif = document.getElementById('u-email-notif').value.trim();
+
+  try {
+    await fetch('/api/admin/config', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json','Authorization':'Bearer ' + adminToken},
+      body: JSON.stringify({
+        plan: 'paid',
+        adminNotifyMethod: upgradeMethod,
+        adminNotifyPhone: phone,
+        adminNotifyEmail: emailNotif,
+      })
+    });
+    config.plan = 'paid';
+    config.adminNotifyMethod = upgradeMethod;
+    config.adminNotifyPhone = phone;
+    config.adminNotifyEmail = emailNotif;
+    closeUpgradeModal();
+    applyPlanUI('paid');
+    populateAdmin();
+    showToast('Welcome to Professional — everything is unlocked');
+  } catch {
+    errEl.textContent = 'Something went wrong. Please try again.';
+    errEl.style.display = 'block';
+  }
+}
+
+function toggleSection(id) {
+  const body = document.getElementById('sec-' + id);
+  const caret = document.getElementById('caret-' + id);
+  const isOpen = body.style.display !== 'none';
+  body.style.display = isOpen ? 'none' : 'flex';
+  caret.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
+}
+
+// ── Scan ───────────────────────────────────────────────────────────────────────
+async function startScan() {
+  const url = document.getElementById('url-input').value.trim();
+  if (!url) return showToast('Please enter your website URL');
+
+  // If paid plan, validate notify fields
+  if (selectedPlan === 'paid') {
+    const method = document.querySelector('input[name="notify-method"]:checked')?.value || 'sms';
+    if (method === 'sms' && !document.getElementById('notify-phone').value.trim()) {
+      return showToast('Please enter your mobile number for SMS alerts');
+    }
+    if (method === 'email' && !document.getElementById('notify-email-notif').value.trim()) {
+      return showToast('Please enter your email address for notifications');
+    }
+  }
+
+  if (!adminToken) { requireAdmin('setup'); return; }
+
+  document.getElementById('scan-btn').disabled = true;
+  document.getElementById('url-input').disabled = true;
+  document.getElementById('scan-box').style.display = 'block';
+  document.getElementById('scan-actions').style.display = 'none';
+  document.getElementById('scan-log').innerHTML = '';
+  document.getElementById('progress-fill').style.width = '0%';
+  hideScanError();
+
+  let resp;
+  try {
+    resp = await fetch('/api/scan', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json','Authorization':'Bearer ' + adminToken},
+      body: JSON.stringify({ url })
+    });
+  } catch (err) {
+    showScanError('Network error: ' + err.message);
+    document.getElementById('scan-btn').disabled = false;
+    document.getElementById('url-input').disabled = false;
+    document.getElementById('scan-actions').style.display = 'flex';
+    return;
+  }
+
+  if (!resp.ok) {
+    let msg = 'Scan failed (HTTP ' + resp.status + ')';
+    try { const e = await resp.json(); msg += ': ' + (e.error || JSON.stringify(e)); } catch {}
+    showScanError(msg);
+    document.getElementById('scan-btn').disabled = false;
+    document.getElementById('url-input').disabled = false;
+    document.getElementById('scan-actions').style.display = 'flex';
+    return;
+  }
+
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const parts = buf.split('\n\n');
+      buf = parts.pop();
+      for (const part of parts) {
+        const line = part.replace(/^data: /, '').trim();
+        if (!line) continue;
+        try {
+          const d = JSON.parse(line);
+          if (d.error) { showScanError(d.error); continue; }
+          addScanLog(d.step, d.done);
+          document.getElementById('progress-fill').style.width = d.progress + '%';
+          document.getElementById('scan-title').textContent = d.done ? 'Scan complete' : 'Analysing…';
+          if (d.done) {
+            document.getElementById('scan-pulse').style.display = 'none';
+            document.getElementById('scan-actions').style.display = 'flex';
+            document.getElementById('s1').classList.add('done');
+            document.getElementById('s2').classList.add('done');
+            if (d.summary) {
+              const notifyMethod = document.querySelector('input[name="notify-method"]:checked')?.value || 'sms';
+              const patch = {
+                scannedContent: d.summary,
+                plan: selectedPlan,
+                adminNotifyMethod: notifyMethod,
+                adminNotifyPhone: selectedPlan === 'paid' ? (document.getElementById('notify-phone').value.trim() || '') : '',
+                adminNotifyEmail: selectedPlan === 'paid' ? (document.getElementById('notify-email-notif').value.trim() || '') : '',
+              };
+              // Auto-populate business name if detected and field is empty
+              if (d.detectedBizName && !document.getElementById('f-bizName')?.value) {
+                patch.bizName = d.detectedBizName;
+              }
+              await saveFieldBatch(patch);
+              await reloadConfig();
+            }
+          }
+        } catch (parseErr) {
+          showScanError('Unexpected response from server: ' + parseErr.message);
+        }
+      }
+    }
+  } catch (streamErr) {
+    showScanError('Connection lost during scan: ' + streamErr.message);
+    document.getElementById('scan-actions').style.display = 'flex';
+  }
+
+  document.getElementById('scan-btn').disabled = false;
+  document.getElementById('url-input').disabled = false;
+}
+
+function addScanLog(text, done) {
+  const log = document.getElementById('scan-log');
+  const span = document.createElement('div');
+  span.innerHTML = `<span class="${done ? 'ok' : ''}" style="margin-right:6px">›</span>${text}`;
+  log.appendChild(span);
+}
+
+function showScanError(msg) {
+  const el = document.getElementById('scan-error');
+  if (!el) return;
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+function hideScanError() {
+  const el = document.getElementById('scan-error');
+  if (el) el.style.display = 'none';
+}
+
+async function saveFieldBatch(patch) {
+  if (!adminToken) return;
+  await fetch('/api/admin/config', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json','Authorization':'Bearer ' + adminToken},
+    body: JSON.stringify(patch)
+  });
+}
+
+async function reloadConfig() {
+  const r = await fetch('/api/config');
+  config = await r.json();
+  services = [...(config.services || [])];
+  populateAdmin();
+  applyPlanUI(config.plan || 'free');
+}
+
+async function launchBot() {
+  if (selectedPlan === 'paid') {
+    const method = document.querySelector('input[name="notify-method"]:checked')?.value || 'sms';
+    if (method === 'sms' && !document.getElementById('notify-phone').value.trim()) {
+      return showToast('Please provide your mobile number before launching');
+    }
+  }
+  await saveFieldBatch({ isLive: true, plan: selectedPlan });
+  document.getElementById('s3').classList.add('done');
+  document.getElementById('nav-status').classList.add('visible');
+  config.isLive = true;
+  document.getElementById('open-chat-btn').style.display = '';
+  switchView('demo');
+  startChat();
+  showToast('Gloria is now live');
+}
+
+function openChatWindow() {
+  const key = config.widgetKey || '';
+  const chatUrl = (window.location.origin) + '/chat' + (key ? '?key=' + encodeURIComponent(key) : '');
+  const w = window.open(chatUrl, 'gloria-chat', 'width=420,height=620,resizable=yes');
+  if (!w) {
+    showScanError('Pop-up blocked by your browser. Please allow pop-ups for this site and try again.');
+  }
+}
+
+// ── Admin panel ────────────────────────────────────────────────────────────────
+function populateAdmin() {
+  const fields = ['bizName','hours','phone','email','priceHints','paymentMethods','calendarLink','extraInfo','greeting','adminNotifyMethod','adminNotifyPhone','adminNotifyEmail'];
+  fields.forEach(f => {
+    const el = document.getElementById('f-' + f);
+    if (el) el.value = config[f] || '';
+  });
+  const bizName = document.getElementById('chat-biz-name');
+  if (bizName) bizName.textContent = config.bizName || '—';
+  renderServiceTags();
+  const statusEl = document.getElementById('admin-status');
+  if (statusEl) {
+    const planLabel = config.plan === 'paid' ? 'Professional' : 'Essential';
+    statusEl.innerHTML = config.isLive
+      ? `<span style="color:var(--green)">Live</span> · <span style="color:var(--gold)">${planLabel}</span>`
+      : `<span style="color:var(--amber)">Not yet launched</span> · <span style="color:var(--silver)">${planLabel}</span>`;
+  }
+}
+
+function renderServiceTags() {
+  const wrap = document.getElementById('service-tags');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  services.forEach(s => {
+    const span = document.createElement('span');
+    span.className = 'tag';
+    span.innerHTML = `${escHtml(s)} <button onclick="removeService('${s.replace(/'/g,"\\'")}')">×</button>`;
+    wrap.appendChild(span);
+  });
+}
+
+function addService() {
+  const inp = document.getElementById('new-service');
+  const val = inp.value.trim();
+  if (!val || services.includes(val)) return;
+  services.push(val);
+  renderServiceTags();
+  inp.value = '';
+}
+
+function removeService(s) {
+  services = services.filter(x => x !== s);
+  renderServiceTags();
+}
+
+document.addEventListener('keydown', e => {
+  if (e.target.id === 'new-service' && e.key === 'Enter') addService();
+});
+
+async function saveConfig() {
+  if (!adminToken) { requireAdmin('demo'); return; }
+  const fields = ['bizName','hours','phone','email','priceHints','paymentMethods','calendarLink','extraInfo','greeting','adminNotifyMethod','adminNotifyPhone','adminNotifyEmail'];
+  const body = { services };
+  fields.forEach(f => {
+    const el = document.getElementById('f-' + f);
+    if (el) body[f] = el.value;
+  });
+  await fetch('/api/admin/config', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json','Authorization':'Bearer ' + adminToken},
+    body: JSON.stringify(body)
+  });
+  config = { ...config, ...body };
+  document.getElementById('chat-biz-name').textContent = config.bizName || '—';
+  showToast('Configuration saved');
+}
+
+async function testNotify() {
+  if (!adminToken) { requireAdmin('demo'); return; }
+  const method = document.getElementById('f-adminNotifyMethod').value;
+  const phone = document.getElementById('f-adminNotifyPhone').value.trim();
+  const email = document.getElementById('f-adminNotifyEmail').value.trim();
+  const r = await fetch('/api/admin/test-notify', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json','Authorization':'Bearer ' + adminToken},
+    body: JSON.stringify({ method, phone, email })
+  });
+  const d = await r.json();
+  showToast(d.ok ? 'Test notification sent' : `Could not send: ${d.reason || 'check configuration'}`);
+}
+
+// ── Chat ───────────────────────────────────────────────────────────────────────
+const QUICK_INITIAL = ['Book an appointment', 'Request a quote', 'Our services', 'Opening hours'];
+const QUICK_FOLLOW  = ['Book now', 'Get a quote', 'Opening hours', 'Speak with the team'];
+
+function startChat() {
+  sessionId = null;
+  document.getElementById('chat-msgs').innerHTML = '';
+  document.getElementById('quick-replies').innerHTML = '';
+  showQuickReplies(QUICK_INITIAL);
+  const greeting = config.greeting ||
+    `${timeOfDay()}. I'm Gloria — I'm the receptionist here at ${config.bizName || 'the firm'}. How may I assist you today?`;
+  addMsg('bot', greeting);
+}
+
+function timeOfDay() {
+  const h = new Date().getHours();
+  if (h < 12) return 'Morning';
+  if (h < 17) return 'Afternoon';
+  return 'Evening';
+}
+
+function resetChat() { startChat(); showToast('Chat reset'); }
+
+function addMsg(role, text, isAdmin) {
+  const wrap = document.getElementById('chat-msgs');
+  const div = document.createElement('div');
+  div.className = 'msg ' + (role === 'user' ? 'user' : 'bot');
+  const time = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  if (role === 'bot') {
+    const avatarStyle = isAdmin ? 'background:var(--pewter);border-color:var(--gold)' : '';
+    const avatarLabel = isAdmin ? 'A' : 'G';
+    div.innerHTML = `<div class="msg-av" style="${avatarStyle}">${avatarLabel}</div><div class="msg-bubble">${escHtml(text)}</div>`;
+  } else {
+    div.innerHTML = `<div class="msg-bubble">${escHtml(text)}</div>`;
+  }
+  wrap.appendChild(div);
+  const timeEl = document.createElement('div');
+  timeEl.className = 'msg-time';
+  timeEl.textContent = time;
+  wrap.appendChild(timeEl);
+  wrap.scrollTop = wrap.scrollHeight;
+}
+
+function showTypingIndicator() {
+  const wrap = document.getElementById('chat-msgs');
+  const div = document.createElement('div');
+  div.className = 'typing-wrap'; div.id = 'typing-indicator';
+  div.innerHTML = `<div class="msg-av">G</div><div class="typing-bubble"><div class="typing-dots"><span></span><span></span><span></span></div></div>`;
+  wrap.appendChild(div);
+  wrap.scrollTop = wrap.scrollHeight;
+}
+
+function hideTypingIndicator() {
+  const el = document.getElementById('typing-indicator');
+  if (el) el.remove();
+}
+
+// Typing delay: proportional to reply length, naturally varied, max 20s
+// Short replies (< 80 chars) get 0.8–2s; long replies scale up to 20s
+let lastResponseLength = 80;
+function calcTypingDelay(len) {
+  len = len || 80;
+  const diff = Math.abs(len - lastResponseLength);
+  // Base: 800ms + 45ms per char + variance from length change + small random jitter
+  const raw = 800 + (len * 45) + Math.min(diff * 6, 3000) + (Math.random() * 900);
+  lastResponseLength = len;
+  return Math.min(raw, 20000);
+}
+
+function showQuickReplies(items) {
+  const wrap = document.getElementById('quick-replies');
+  wrap.innerHTML = '';
+  items.forEach(q => {
+    const btn = document.createElement('button');
+    btn.className = 'qr';
+    btn.textContent = q;
+    btn.onclick = () => sendMessageText(q);
+    wrap.appendChild(btn);
+  });
+}
+
+async function sendMessage() {
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  input.style.height = 'auto';
+  await sendMessageText(text);
+}
+
+async function sendMessageText(text) {
+  document.getElementById('quick-replies').innerHTML = '';
+  addMsg('user', text);
+  document.getElementById('send-btn').disabled = true;
+
+  // Show typing indicator immediately (human-like)
+  showTypingIndicator();
+
+  try {
+    // Fetch from API first, then delay display
+    const fetchStart = Date.now();
+    const r = await fetch('/api/chat', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ sessionId, message: text })
+    });
+    const d = await r.json();
+    const fetchTime = Date.now() - fetchStart;
+
+    if (d.error === 'banned') {
+      hideTypingIndicator();
+      showBannedState(d.reply);
+      document.getElementById('send-btn').disabled = false;
+      return;
+    }
+
+    if (d.takenOver) {
+      hideTypingIndicator();
+      document.getElementById('send-btn').disabled = false;
+      return;
+    }
+
+    if (d.reply) {
+      if (!sessionId) sessionId = d.sessionId;
+
+      const targetDelay = calcTypingDelay(d.replyLength || (d.reply ? d.reply.length : 80));
+      const remaining = Math.max(0, targetDelay - fetchTime);
+      await new Promise(res => setTimeout(res, remaining));
+
+      hideTypingIndicator();
+      addMsg('bot', d.reply);
+
+      if (d.warning) {
+        showWarningBanner(d.warningCount, d.banned);
+      }
+
+      if (d.booking) {
+        showBookingConfirmation(d.booking, d.icsContent);
+      }
+
+      // Lock chat if banned or session forcibly ended
+      if (d.banned) {
+        showBannedState();
+        return;
+      }
+
+      if (d.ended) {
+        lockChat('This conversation has ended. Please contact us directly if you need anything further.');
+        return;
+      }
+
+      showQuickReplies(QUICK_FOLLOW);
+    } else {
+      hideTypingIndicator();
+      addMsg('bot', 'Something seems to have gone awry — shall we try that again?');
+    }
+  } catch {
+    hideTypingIndicator();
+    addMsg('bot', 'There seems to be a connection issue. Please refresh and try again.');
+  }
+  document.getElementById('send-btn').disabled = false;
+}
+
+function showBookingConfirmation(booking, icsContent) {
+  const wrap = document.getElementById('chat-msgs');
+  const div = document.createElement('div');
+  div.style.padding = '0 0 4px';
+  div.style.animation = 'riseIn .3s ease';
+
+  const googleUrl = buildGoogleCalUrl(booking);
+  const outlookUrl = buildOutlookCalUrl(booking);
+
+  div.innerHTML = `
+    <div class="booking-confirm" style="margin:0 0 4px">
+      <div class="booking-confirm-title">Appointment Confirmed</div>
+      <div>${escHtml(booking.name)} · ${escHtml(booking.date)} at ${escHtml(booking.time || '')}</div>
+      ${booking.service ? `<div style="color:var(--silver)">${escHtml(booking.service)}</div>` : ''}
+      <div class="booking-calendar-btns">
+        <a class="cal-btn" href="${googleUrl}" target="_blank" rel="noopener">Google Calendar</a>
+        <a class="cal-btn" href="${outlookUrl}" target="_blank" rel="noopener">Outlook</a>
+        <a class="cal-btn" href="/api/booking/${booking.id}/ics" download="appointment.ics">iCalendar (.ics)</a>
+      </div>
+    </div>`;
+  wrap.appendChild(div);
+  wrap.scrollTop = wrap.scrollHeight;
+}
+
+function buildGoogleCalUrl(b) {
+  const start = (b.date + 'T' + (b.time || '09:00') + ':00').replace(/-|:/g, '').slice(0, 15);
+  // Add 1 hour for end
+  const [h, m] = (b.time || '09:00').split(':').map(Number);
+  const endH = String(h + 1).padStart(2, '0');
+  const end = (b.date + 'T' + endH + ':' + String(m).padStart(2, '0') + ':00').replace(/-|:/g, '').slice(0, 15);
+  const params = new URLSearchParams({
+    action: 'TEMPLATE',
+    text: `Appointment — ${config.bizName || 'Your Business'}`,
+    dates: `${start}/${end}`,
+    details: b.notes || b.service || '',
+  });
+  return `https://calendar.google.com/calendar/render?${params}`;
+}
+
+function buildOutlookCalUrl(b) {
+  const start = b.date + 'T' + (b.time || '09:00') + ':00';
+  const [h, m] = (b.time || '09:00').split(':').map(Number);
+  const endH = String(h + 1).padStart(2, '0');
+  const end = b.date + 'T' + endH + ':' + String(m).padStart(2, '0') + ':00';
+  const params = new URLSearchParams({
+    path: '/calendar/action/compose',
+    rru: 'addevent',
+    startdt: start,
+    enddt: end,
+    subject: `Appointment — ${config.bizName || 'Your Business'}`,
+    body: b.notes || b.service || '',
+  });
+  return `https://outlook.live.com/calendar/0/deeplink/compose?${params}`;
+}
+
+// Auto-resize textarea
+document.addEventListener('input', e => {
+  if (e.target.id === 'chat-input') {
+    e.target.style.height = 'auto';
+    e.target.style.height = Math.min(e.target.scrollHeight, 80) + 'px';
+  }
+});
+
+document.addEventListener('keydown', e => {
+  if (e.target.id === 'chat-input' && e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault(); sendMessage();
+  }
+});
+
+// ── Sessions (QA) ──────────────────────────────────────────────────────────────
+async function loadSessions() {
+  if (!adminToken) return;
+  const r = await fetch('/api/admin/sessions', { headers: {'Authorization':'Bearer ' + adminToken} });
+  const sessions = await r.json();
+  const body = document.getElementById('qa-body');
+  if (!sessions.length) {
+    body.innerHTML = '<div class="empty-state">No sessions on record.<br>Gloria will log every conversation here.</div>';
+    return;
+  }
+  body.innerHTML = '';
+
+  // Plan badge
+  const badgeEl = document.getElementById('qa-plan-badge');
+  if (badgeEl) {
+    const plan = config.plan || 'free';
+    badgeEl.innerHTML = `<span class="plan-badge ${plan}">${plan === 'paid' ? 'Professional' : 'Essential'}</span>`;
+  }
+
+  sessions.forEach(s => {
+    const card = document.createElement('div');
+    card.className = 'session-card';
+    const msgs = s.messages.map(m => {
+      const cls = m.role === 'user' ? 'user' : (m.adminSent ? 'admin' : 'bot');
+      const roleLabel = m.role === 'user' ? 'Client' : (m.adminSent ? 'Admin' : 'Gloria');
+      return `<div class="log-msg ${cls}"><div class="log-role">${roleLabel}</div>${escHtml(m.content)}</div>`;
+    }).join('');
+
+    const badges = [
+      s.takenOver ? '<span class="session-badge taken">Admin Active</span>' : '',
+      s.booking ? '<span class="session-badge booked">Booked</span>' : '',
+    ].filter(Boolean).join('');
+
+    card.innerHTML = `
+      <div class="session-head">
+        <span class="session-id">${s.id.slice(0,8)}</span>
+        ${badges}
+        <span style="font-size:10px;color:var(--silver)">${s.messageCount} messages</span>
+        <span class="session-meta">${new Date(s.createdAt).toLocaleString('en-GB')}</span>
+      </div>
+      <div class="session-msgs">${msgs}</div>
+      ${config.plan === 'paid' ? renderTakeoverBar(s) : ''}`;
+    body.appendChild(card);
+  });
+}
+
+function renderTakeoverBar(session) {
+  const btnLabel = session.takenOver ? 'Return to Gloria' : 'Take Over Chat';
+  const btnClass = session.takenOver ? 'btn-outline' : 'btn-gold';
+  const actionFn = session.takenOver ? `handBack('${session.id}')` : `takeOver('${session.id}')`;
+  return `<div class="session-takeover-bar">
+    <input class="session-takeover-input" id="to-msg-${session.id}" placeholder="Type a message to send as admin…">
+    <button class="btn btn-ghost btn-sm" onclick="sendAdminMsg('${session.id}')">Send</button>
+    <button class="btn ${btnClass} btn-sm" onclick="${actionFn}">${btnLabel}</button>
+  </div>`;
+}
+
+async function takeOver(sid) {
+  await fetch('/api/admin/message', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json','Authorization':'Bearer ' + adminToken},
+    body: JSON.stringify({ sessionId: sid, message: 'I have joined this conversation.' })
+  });
+  showToast('You have taken over this session');
+  loadSessions();
+}
+
+async function handBack(sid) {
+  await fetch('/api/admin/handback', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json','Authorization':'Bearer ' + adminToken},
+    body: JSON.stringify({ sessionId: sid })
+  });
+  showToast('Session returned to Gloria');
+  loadSessions();
+}
+
+async function sendAdminMsg(sid) {
+  const inp = document.getElementById('to-msg-' + sid);
+  const msg = inp?.value.trim();
+  if (!msg) return;
+  await fetch('/api/admin/message', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json','Authorization':'Bearer ' + adminToken},
+    body: JSON.stringify({ sessionId: sid, message: msg })
+  });
+  if (inp) inp.value = '';
+  showToast('Message sent');
+  loadSessions();
+}
+
+async function clearSessions() {
+  if (!confirm('Clear all session logs? This cannot be undone.')) return;
+  await fetch('/api/admin/sessions', { method: 'DELETE', headers: {'Authorization':'Bearer ' + adminToken} });
+  loadSessions();
+  showToast('Sessions cleared');
+}
+
+// ── Bookings ───────────────────────────────────────────────────────────────────
+async function loadBookings() {
+  if (!adminToken) return;
+  const r = await fetch('/api/admin/bookings', { headers: {'Authorization':'Bearer ' + adminToken} });
+  const bookings = await r.json();
+  const body = document.getElementById('bookings-body');
+  if (!bookings.length) {
+    body.innerHTML = '<div class="empty-state">No bookings yet.<br>When Gloria confirms an appointment, it will appear here.</div>';
+    return;
+  }
+  body.innerHTML = '';
+  [...bookings].reverse().forEach(b => {
+    const card = document.createElement('div');
+    card.className = 'booking-card';
+    const googleUrl = buildGoogleCalUrl(b);
+    const outlookUrl = buildOutlookCalUrl(b);
+    card.innerHTML = `
+      <div class="booking-card-header">
+        <div class="booking-name">${escHtml(b.name)}</div>
+        <span class="session-badge booked" style="margin-left:auto">Confirmed</span>
+      </div>
+      <div class="booking-date">${escHtml(b.date)} at ${escHtml(b.time || '—')}</div>
+      ${b.service ? `<div class="booking-detail">${escHtml(b.service)}</div>` : ''}
+      ${b.phone ? `<div class="booking-detail">📞 ${escHtml(b.phone)}</div>` : ''}
+      ${b.email ? `<div class="booking-detail">✉ ${escHtml(b.email)}</div>` : ''}
+      ${b.notes ? `<div class="booking-detail" style="color:var(--silver)">${escHtml(b.notes)}</div>` : ''}
+      <div class="booking-cal-row">
+        <a class="cal-btn" href="${googleUrl}" target="_blank" rel="noopener">Google Calendar</a>
+        <a class="cal-btn" href="${outlookUrl}" target="_blank" rel="noopener">Outlook</a>
+        <a class="cal-btn" href="/api/booking/${b.id}/ics" download="appointment.ics">iCalendar</a>
+      </div>`;
+    body.appendChild(card);
+  });
+}
+
+// ── Guardrails UI ──────────────────────────────────────────────────────────────
+function showWarningBanner(count, banned) {
+  // Remove existing
+  document.querySelectorAll('.warning-banner').forEach(el => el.remove());
+  const msgs = document.getElementById('chat-msgs');
+  if (!msgs) return;
+  const div = document.createElement('div');
+  div.className = `warning-banner ${banned ? 'banned' : `warn-${count}`}`;
+  if (banned) {
+    div.innerHTML = `<strong>Access Suspended</strong>This chat service is no longer available to you. Please contact us directly if you have a genuine enquiry.`;
+  } else {
+    const remaining = 3 - count;
+    div.innerHTML = `<strong>Warning ${count} of 3</strong>Please keep this conversation relevant to our services. ${remaining === 1 ? 'One more warning will suspend your access.' : `${remaining} warnings remaining.`}`;
+  }
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function showBannedState(message) {
+  lockChat(message || 'Access to this chat has been suspended.');
+}
+
+function lockChat(message) {
+  // Disable input
+  const input = document.getElementById('chat-input');
+  const sendBtn = document.getElementById('send-btn');
+  const voiceBtn = document.getElementById('voice-btn');
+  const qr = document.getElementById('quick-replies');
+  if (input) { input.disabled = true; input.placeholder = 'Chat unavailable.'; }
+  if (sendBtn) sendBtn.disabled = true;
+  if (voiceBtn) voiceBtn.disabled = true;
+  if (qr) qr.innerHTML = '';
+  // Replace input bar with locked notice
+  const bar = document.querySelector('.chat-input-bar');
+  if (bar) {
+    bar.style.display = 'none';
+    const notice = document.createElement('div');
+    notice.className = 'chat-locked';
+    notice.innerHTML = `<strong>Chat Ended</strong>${escHtml(message)}`;
+    bar.parentNode.insertBefore(notice, bar);
+  }
+}
+
+// ── Calendar OAuth ─────────────────────────────────────────────────────────────
+let upgradeCalendarConnected = null;
+
+async function connectCalendar(provider) {
+  if (!adminToken) return;
+  const r = await fetch(`/api/oauth/${provider}`, { headers: {'Authorization':'Bearer ' + adminToken} });
+  const d = await r.json();
+  if (d.error) {
+    document.getElementById('cal-setup-note').style.display = 'block';
+    return;
+  }
+  if (d.url) {
+    const win = window.open(d.url, 'CalendarAuth', 'width=520,height=640');
+    // Poll for completion
+    const poll = setInterval(async () => {
+      if (win.closed) {
+        clearInterval(poll);
+        const s = await fetch('/api/calendar/status', { headers: {'Authorization':'Bearer ' + adminToken} });
+        const sd = await s.json();
+        if (sd.connected) {
+          upgradeCalendarConnected = sd.connected;
+          document.getElementById('cal-connected-msg').style.display = 'block';
+          document.getElementById('cal-connected-label').textContent =
+            sd.connected === 'google' ? 'Google Calendar is connected.' : 'Outlook Calendar is connected.';
+          document.getElementById('cal-options').style.opacity = '0.4';
+          document.getElementById('cal-options').style.pointerEvents = 'none';
+        }
+      }
+    }, 800);
+  }
+}
+
+async function disconnectCalendar() {
+  if (!adminToken) return;
+  await fetch('/api/oauth/disconnect', { method: 'POST', headers: {'Authorization':'Bearer ' + adminToken} });
+  upgradeCalendarConnected = null;
+  document.getElementById('cal-connected-msg').style.display = 'none';
+  document.getElementById('cal-options').style.opacity = '';
+  document.getElementById('cal-options').style.pointerEvents = '';
+  showToast('Calendar disconnected');
+}
+
+// ── Voice call ─────────────────────────────────────────────────────────────────
+let voiceActive = false;
+let greetingDone = false;
+let idleTimer1 = null;
+let idleTimer2 = null;
+let idleTimer3 = null;
+let voiceSessionId = null;
+let mediaRecorder = null;
+let audioQueue = [];
+let audioPlaying = false;
+let voiceMuted = false;
+let deepgramSocket = null;
+let currentTranscript = '';
+let silenceTimer = null;
+let voiceProcessing = false; // lock — prevents duplicate sends while Gloria is responding
+let voiceCooldownUntil = 0;
+let micStream = null;
+let deepgramKey = null;
+let nextDeepgramSocket = null; // pre-warmed connection, ready to swap in
+const SILENCE_TIMEOUT = 1200;
+// Natural response delay: mimics the 400–700ms a person takes before replying
+// after the other person has finished speaking
+const RESPONSE_DELAY_MIN = 420;
+const RESPONSE_DELAY_MAX = 680;
+
+async function toggleVoiceCall() {
+  if (voiceActive) {
+    endVoiceCall();
+  } else {
+    await startVoiceCall();
+  }
+}
+
+async function startVoiceCall() {
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, sampleRate: 16000 } });
+    voiceActive = true;
+    voiceSessionId = sessionId;
+    showVoiceOverlay();
+    document.getElementById('voice-btn').classList.add('active');
+
+    const keyResp = await fetch('/api/voice/token').catch(() => null);
+    const keyData = keyResp?.ok ? await keyResp.json() : null;
+    deepgramKey = keyData?.key || null;
+
+    if (deepgramKey) {
+      startDeepgramSTT(micStream, deepgramKey);
+    } else {
+      startWebSpeechSTT(micStream);
+    }
+  } catch (e) {
+    showToast('Microphone access denied — please allow microphone and try again.');
+  }
+}
+
+function prewarmDeepgram() {
+  // Open the next Deepgram connection while Gloria is still speaking,
+  // so it's fully connected and ready to swap in the moment she stops.
+  if (!micStream || !deepgramKey || nextDeepgramSocket) return;
+  nextDeepgramSocket = new WebSocket(
+    `wss://api.deepgram.com/v1/listen?model=nova-2&language=en-GB&punctuate=true&interim_results=true&endpointing=300`,
+    ['token', deepgramKey]
+  );
+  // Don't attach onmessage yet — just let it connect
+  nextDeepgramSocket.onerror = () => { nextDeepgramSocket = null; };
+}
+
+function restartDeepgramSTT() {
+  // Kill old connection — drops all buffered loopback audio
+  if (deepgramSocket) {
+    deepgramSocket.onmessage = null;
+    deepgramSocket.close();
+    deepgramSocket = null;
+  }
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop();
+    mediaRecorder = null;
+  }
+
+  if (!micStream || !deepgramKey) return;
+
+  // Swap in the pre-warmed socket if it's ready, otherwise open fresh
+  if (nextDeepgramSocket && nextDeepgramSocket.readyState === WebSocket.OPEN) {
+    deepgramSocket = nextDeepgramSocket;
+    nextDeepgramSocket = null;
+    attachDeepgramAndRecord(deepgramSocket);
+  } else {
+    // Pre-warm wasn't ready in time — fall back to opening fresh
+    if (nextDeepgramSocket) { nextDeepgramSocket.close(); nextDeepgramSocket = null; }
+    startDeepgramSTT(micStream, deepgramKey);
+  }
+}
+
+function endVoiceCall() {
+  voiceActive = false;
+  voiceProcessing = false;
+  greetingDone = false;
+  clearIdleTimers();
+  if (nextDeepgramSocket) { nextDeepgramSocket.close(); nextDeepgramSocket = null; }
+  if (deepgramSocket) { deepgramSocket.onmessage = null; deepgramSocket.close(); deepgramSocket = null; }
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') { mediaRecorder.stop(); mediaRecorder = null; }
+  if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+  deepgramKey = null;
+  audioQueue = [];
+  audioPlaying = false;
+  currentTranscript = '';
+  clearTimeout(silenceTimer);
+  hideVoiceOverlay();
+  document.getElementById('voice-btn').classList.remove('active');
+}
+
+function showVoiceOverlay() {
+  const chatWindow = document.querySelector('.chat-window');
+  const existing = document.getElementById('voice-overlay');
+  if (existing) existing.remove();
+  const biz = config.bizName || 'the firm';
+  const div = document.createElement('div');
+  div.className = 'voice-overlay'; div.id = 'voice-overlay';
+  div.innerHTML = `
+    <div class="voice-avatar-ring" id="voice-avatar-ring">
+      <div class="voice-avatar-letter">G</div>
+    </div>
+    <div class="voice-name">Gloria</div>
+    <div style="font-size:10px;color:var(--ash);letter-spacing:1px">${escHtml(biz)}</div>
+    <div class="voice-waveform idle" id="voice-waveform">
+      <span></span><span></span><span></span><span></span><span></span>
+    </div>
+    <div class="voice-transcript" id="voice-transcript">Listening…</div>
+    <div class="voice-controls">
+      <button class="voice-mute-btn" id="voice-mute-btn" onclick="toggleVoiceMute()" title="Mute">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+      </button>
+      <button class="voice-end-btn" onclick="endVoiceCall()">End Call</button>
+    </div>`;
+  chatWindow.appendChild(div);
+  // Gloria opens
+  setTimeout(() => speakGloriaGreeting(), 400);
+}
+
+function hideVoiceOverlay() {
+  const el = document.getElementById('voice-overlay');
+  if (el) el.remove();
+}
+
+async function speakGloriaGreeting() {
+  if (greetingDone) return;
+  greetingDone = true;
+  voiceProcessing = true; // block mic loopback while greeting plays
+  const biz = config.bizName || '';
+  const greeting = config.greeting || (biz
+    ? `${timeOfDay()}, ${biz}... how can I help?`
+    : `${timeOfDay()}, how can I help?`);
+  setVoiceStatus('speaking');
+  await playGloriaSpeech(greeting);
+  setVoiceStatus('listening');
+  releaseVoiceLock();
+  startIdleTimers();
+}
+
+function releaseVoiceLock() {
+  voiceProcessing = false;
+  voiceCooldownUntil = 0;
+  // Restart Deepgram connection to flush any buffered loopback audio from Gloria's output
+  if (deepgramKey) restartDeepgramSTT();
+}
+
+function clearIdleTimers() {
+  clearTimeout(idleTimer1);
+  clearTimeout(idleTimer2);
+  clearTimeout(idleTimer3);
+  idleTimer1 = idleTimer2 = idleTimer3 = null;
+}
+
+function startIdleTimers() {
+  clearIdleTimers();
+  // 5s: say "Hello?"
+  idleTimer1 = setTimeout(async () => {
+    if (!voiceActive || voiceProcessing) return;
+    voiceProcessing = true;
+    setVoiceStatus('speaking');
+    await playGloriaSpeech('Hello?');
+    setVoiceStatus('listening');
+    releaseVoiceLock();
+    // 2s after that: say "Hello, is anyone there?"
+    idleTimer2 = setTimeout(async () => {
+      if (!voiceActive || voiceProcessing) return;
+      voiceProcessing = true;
+      setVoiceStatus('speaking');
+      await playGloriaSpeech('Hello, is anyone there?');
+      setVoiceStatus('listening');
+      releaseVoiceLock();
+      // 10s after that: end call
+      idleTimer3 = setTimeout(() => {
+        if (!voiceActive) return;
+        endVoiceCall();
+      }, 10000);
+    }, 2000);
+  }, 5000);
+}
+
+function setVoiceStatus(state) {
+  const ring = document.getElementById('voice-avatar-ring');
+  const waveform = document.getElementById('voice-waveform');
+  const transcript = document.getElementById('voice-transcript');
+  if (!ring) return;
+  if (state === 'speaking') {
+    ring.classList.add('speaking');
+    waveform?.classList.remove('idle');
+    if (transcript) transcript.textContent = 'Gloria is speaking…';
+    prewarmDeepgram(); // start next connection while Gloria speaks — zero-gap swap
+  } else if (state === 'listening') {
+    ring.classList.remove('speaking');
+    waveform?.classList.add('idle');
+    if (transcript) transcript.textContent = 'Listening…';
+  } else if (state === 'thinking') {
+    ring.classList.remove('speaking');
+    waveform?.classList.add('idle');
+    if (transcript) transcript.textContent = '…';
+  }
+}
+
+function updateVoiceTranscript(text) {
+  const el = document.getElementById('voice-transcript');
+  if (el) el.textContent = text ? `"${text}"` : 'Listening…';
+}
+
+function toggleVoiceMute() {
+  voiceMuted = !voiceMuted;
+  const btn = document.getElementById('voice-mute-btn');
+  if (btn) btn.classList.toggle('muted', voiceMuted);
+  if (deepgramSocket && voiceMuted) {
+    // We keep connection open but ignore input
+  }
+  showToast(voiceMuted ? 'Muted' : 'Unmuted');
+}
+
+// ── Deepgram STT (preferred) ──────────────────────────────────────────────────
+function attachDeepgramAndRecord(socket) {
+  // Attach message handler to the given socket
+  socket.onmessage = (event) => {
+    if (socket !== deepgramSocket) return; // stale socket, ignore
+    const data = JSON.parse(event.data);
+    const alt = data.channel?.alternatives?.[0];
+    if (!alt) return;
+    const transcript = alt.transcript;
+    const isFinal = data.is_final;
+
+    if (transcript && !voiceProcessing && Date.now() > voiceCooldownUntil) {
+      currentTranscript = transcript;
+      updateVoiceTranscript(transcript);
+      clearTimeout(silenceTimer);
+      clearIdleTimers();
+
+      if (isFinal && transcript.trim()) {
+        const finalText = transcript.trim();
+        currentTranscript = '';
+        const delay = RESPONSE_DELAY_MIN + Math.random() * (RESPONSE_DELAY_MAX - RESPONSE_DELAY_MIN);
+        silenceTimer = setTimeout(() => sendVoiceMessage(finalText), delay);
+      }
+    }
+  };
+  socket.onerror = () => {
+    if (socket === deepgramSocket) { deepgramSocket = null; startWebSpeechSTT(micStream); }
+  };
+
+  // Start sending mic audio
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') { mediaRecorder.stop(); mediaRecorder = null; }
+  mediaRecorder = new MediaRecorder(micStream, { mimeType: 'audio/webm;codecs=opus' });
+  mediaRecorder.ondataavailable = (e) => {
+    if (e.data.size > 0 && deepgramSocket && deepgramSocket.readyState === WebSocket.OPEN && !voiceMuted) {
+      deepgramSocket.send(e.data);
+    }
+  };
+  mediaRecorder.start(100);
+}
+
+function startDeepgramSTT(stream, apiKey) {
+  const socket = new WebSocket(
+    `wss://api.deepgram.com/v1/listen?model=nova-2&language=en-GB&punctuate=true&interim_results=true&endpointing=300`,
+    ['token', apiKey]
+  );
+  deepgramSocket = socket;
+  socket.onopen = () => attachDeepgramAndRecord(socket);
+  socket.onerror = () => { if (deepgramSocket === socket) { deepgramSocket = null; startWebSpeechSTT(stream); } };
+}
+
+// ── Web Speech API fallback ───────────────────────────────────────────────────
+function startWebSpeechSTT(stream) {
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    showToast('Speech recognition not supported in this browser. Try Chrome.');
+    endVoiceCall();
+    return;
+  }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const recognition = new SR();
+  recognition.lang = 'en-GB';
+  recognition.continuous = true;
+  recognition.interimResults = true;
+
+  recognition.onresult = (e) => {
+    let interim = '', final = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      if (e.results[i].isFinal) final += e.results[i][0].transcript;
+      else interim += e.results[i][0].transcript;
+    }
+    updateVoiceTranscript(final || interim);
+    if ((final || interim).trim() && Date.now() > voiceCooldownUntil) clearIdleTimers();
+    if (final.trim() && !voiceProcessing && Date.now() > voiceCooldownUntil) {
+      clearTimeout(silenceTimer);
+      const delay = RESPONSE_DELAY_MIN + Math.random() * (RESPONSE_DELAY_MAX - RESPONSE_DELAY_MIN);
+      silenceTimer = setTimeout(() => sendVoiceMessage(final.trim()), delay);
+    }
+  };
+
+  recognition.onerror = () => {};
+  recognition.onend = () => { if (voiceActive) recognition.start(); };
+  recognition.start();
+}
+
+// ── Send transcript to Gloria ─────────────────────────────────────────────────
+async function sendVoiceMessage(transcript) {
+  if (!voiceActive || !transcript || voiceProcessing) return;
+  voiceProcessing = true;
+  setVoiceStatus('thinking');
+
+  try {
+    const resp = await fetch('/api/voice/speak', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ sessionId: voiceSessionId, transcript })
+    });
+
+    // Update shared sessionId
+    const sid = resp.headers.get('X-Session-Id');
+    if (sid) { voiceSessionId = sid; sessionId = sid; }
+
+    const contentType = resp.headers.get('Content-Type') || '';
+
+    if (contentType.includes('audio/mpeg')) {
+      const replyText = decodeURIComponent(resp.headers.get('X-Gloria-Reply') || '');
+      setVoiceStatus('speaking');
+      const arrayBuffer = await resp.arrayBuffer();
+      await playAudioBuffer(arrayBuffer);
+      if (replyText) addMsg('bot', replyText);
+      setVoiceStatus('listening');
+      releaseVoiceLock();
+      startIdleTimers();
+    } else {
+      const data = await resp.json();
+      if (data.reply) {
+        setVoiceStatus('speaking');
+        addMsg('bot', data.reply);
+        await speakWithWebSpeech(data.reply);
+      }
+      if (data.voiceTimeUp || data.voiceEnd || data.banned) {
+        setVoiceStatus('listening');
+        releaseVoiceLock();
+        await new Promise(r => setTimeout(r, 600));
+        endVoiceCall();
+        if (data.warning) showWarningBanner(data.warningCount, data.banned);
+        if (data.banned) showBannedState();
+        return;
+      }
+      setVoiceStatus('listening');
+      releaseVoiceLock();
+      startIdleTimers();
+    }
+  } catch {
+    setVoiceStatus('listening');
+    releaseVoiceLock();
+  }
+}
+
+async function playAudioBuffer(arrayBuffer) {
+  return new Promise((resolve) => {
+    // Play via <audio> element so the browser's built-in echo canceller (AEC)
+    // can subtract Gloria's voice from the mic input — no cooldown needed
+    const blob = new Blob([arrayBuffer], { type: 'audio/mpeg' });
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    audio.onended = () => { URL.revokeObjectURL(url); resolve(); };
+    audio.onerror = () => { URL.revokeObjectURL(url); resolve(); };
+    audio.play().catch(resolve);
+  });
+}
+
+function speakWithWebSpeech(text) {
+  return new Promise((resolve) => {
+    if (!('speechSynthesis' in window)) { resolve(); return; }
+    window.speechSynthesis.cancel();
+    const utt = new SpeechSynthesisUtterance(text);
+    utt.lang = 'en-GB';
+    utt.rate = 0.95;
+    utt.pitch = 1.05;
+    // Try to find a good female British voice
+    const voices = window.speechSynthesis.getVoices();
+    const preferred = voices.find(v => v.lang === 'en-GB' && v.name.toLowerCase().includes('female'))
+      || voices.find(v => v.lang === 'en-GB' && /kate|serena|emily|fiona|moira/i.test(v.name))
+      || voices.find(v => v.lang === 'en-GB')
+      || voices.find(v => v.lang.startsWith('en'));
+    if (preferred) utt.voice = preferred;
+    utt.onend = resolve;
+    utt.onerror = resolve;
+    window.speechSynthesis.speak(utt);
+  });
+}
+
+async function playGloriaSpeech(text) {
+  try {
+    const resp = await fetch('/api/voice/speak', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ sessionId: voiceSessionId, transcript: '__GREETING__', _greeting: text })
+    });
+    const contentType = resp.headers.get('Content-Type') || '';
+    if (contentType.includes('audio/mpeg')) {
+      const buf = await resp.arrayBuffer();
+      await playAudioBuffer(buf);
+    } else {
+      await speakWithWebSpeech(text);
+    }
+  } catch {
+    await speakWithWebSpeech(text);
+  }
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+function escHtml(t) {
+  return String(t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.display = 'block';
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.style.display = 'none', 3200);
+}
+
+init();
+
+// ══════════════════════════════════════════════════════
+// TEAM MANAGEMENT
+// ══════════════════════════════════════════════════════
+
+let teamMembers = [];
+let editingMemberId = null;
+
+async function loadTeam() {
+  if (!adminToken) return;
+  const r = await fetch('/api/admin/team', { headers: { 'Authorization': 'Bearer ' + adminToken } });
+  teamMembers = await r.json();
+  renderTeamList();
+}
+
+function renderTeamList() {
+  const wrap = document.getElementById('team-list');
+  if (!wrap) return;
+  if (!teamMembers.length) {
+    wrap.innerHTML = '<div style="font-size:11px;color:var(--silver);text-align:center;padding:12px 0">No team members yet.</div>';
+    return;
+  }
+  wrap.innerHTML = teamMembers.map(m => `
+    <div class="team-member-row">
+      <div class="team-avatar">${escHtml(m.name.charAt(0).toUpperCase())}</div>
+      <div style="flex:1;min-width:0">
+        <div class="team-name">${escHtml(m.name)}</div>
+        <div class="team-meta">${escHtml(m.phone||'')}${m.email?' · '+escHtml(m.email):''}</div>
+        ${m.baseLocation?`<div class="team-meta">📍 ${escHtml(m.baseLocation)}</div>`:''}
+        ${m.skills?.length?`<div class="team-skills">${m.skills.map(s=>`<span class="skill-tag">${escHtml(s)}</span>`).join('')}</div>`:''}
+        <div class="eng-portal-link" style="margin-top:4px">Portal ID: <strong>${escHtml(m.id)}</strong></div>
+      </div>
+      <button class="team-edit" onclick="showMemberForm('${m.id}')">Edit</button>
+      <button class="team-remove" onclick="removeMember('${m.id}')" title="Remove">×</button>
+    </div>`).join('');
+}
+
+function showMemberForm(memberId) {
+  editingMemberId = memberId || null;
+  const existing = memberId ? teamMembers.find(m => m.id === memberId) : null;
+  const wrap = document.getElementById('member-form-wrap');
+  const btn = document.getElementById('add-member-btn');
+  if (btn) btn.style.display = 'none';
+
+  wrap.innerHTML = `
+    <div class="member-form">
+      <div style="font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--gold);margin-bottom:14px;font-weight:500">${existing?'Edit':'Add'} Team Member</div>
+      <div class="field"><label>Full name *</label><input class="ai" id="mf-name" value="${escHtml(existing?.name||'')}" placeholder="Jane Smith"></div>
+      <div class="field"><label>Mobile (for job notifications)</label><input class="ai" id="mf-phone" value="${escHtml(existing?.phone||'')}" placeholder="+447700900000"></div>
+      <div class="field"><label>Email</label><input class="ai" id="mf-email" value="${escHtml(existing?.email||'')}" placeholder="jane@company.co.uk"></div>
+      <div class="field"><label>Base location (for routing)</label><input class="ai" id="mf-location" value="${escHtml(existing?.baseLocation||'')}" placeholder="Watford, Hertfordshire"></div>
+      <div class="field"><label>Skills (comma separated)</label><input class="ai" id="mf-skills" value="${escHtml((existing?.skills||[]).join(', '))}" placeholder="plumbing, boiler, gas"></div>
+      ${!existing?`<div class="field"><label>Portal password</label><input class="ai" id="mf-password" placeholder="Leave blank to auto-generate"></div>`:''}
+      <div style="display:flex;gap:8px;margin-top:4px">
+        <button class="btn btn-gold btn-sm" onclick="saveMember()" style="flex:1;justify-content:center">${existing?'Save Changes':'Add Member'}</button>
+        <button class="btn btn-ghost btn-sm" onclick="cancelMemberForm()">Cancel</button>
+      </div>
+    </div>`;
+}
+
+function cancelMemberForm() {
+  document.getElementById('member-form-wrap').innerHTML = '';
+  const btn = document.getElementById('add-member-btn');
+  if (btn) btn.style.display = '';
+  editingMemberId = null;
+}
+
+async function saveMember() {
+  const name = document.getElementById('mf-name')?.value.trim();
+  if (!name) { showToast('Name is required'); return; }
+  const body = {
+    id: editingMemberId || undefined,
+    name,
+    phone: document.getElementById('mf-phone')?.value.trim() || '',
+    email: document.getElementById('mf-email')?.value.trim() || '',
+    baseLocation: document.getElementById('mf-location')?.value.trim() || '',
+    skills: (document.getElementById('mf-skills')?.value||'').split(',').map(s=>s.trim()).filter(Boolean),
+    password: document.getElementById('mf-password')?.value.trim() || '',
+  };
+  const r = await fetch('/api/admin/team', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + adminToken },
+    body: JSON.stringify(body),
+  });
+  const d = await r.json();
+  if (d.ok) {
+    if (!editingMemberId && d.member?.password) {
+      showToast(`Added. Portal password: ${d.member.password}`);
+    } else {
+      showToast('Saved');
+    }
+    cancelMemberForm();
+    loadTeam();
+  }
+}
+
+async function removeMember(id) {
+  if (!confirm('Remove this team member?')) return;
+  await fetch(`/api/admin/team/${id}`, {
+    method: 'DELETE',
+    headers: { 'Authorization': 'Bearer ' + adminToken },
+  });
+  loadTeam();
+}
+
+// ══════════════════════════════════════════════════════
+// TRIAGE / DISPATCH
+// ══════════════════════════════════════════════════════
+
+let adminMap = null;
+let adminMapMarkers = [];
+let selectedBookingId = null;
+let triageBookings = [];
+
+async function loadTriage() {
+  if (!adminToken) return;
+  const [bRes, tRes] = await Promise.all([
+    fetch('/api/admin/bookings', { headers: { 'Authorization': 'Bearer ' + adminToken } }),
+    fetch('/api/admin/team',     { headers: { 'Authorization': 'Bearer ' + adminToken } }),
+  ]);
+  triageBookings = await bRes.json();
+  teamMembers = await tRes.json();
+
+  renderTriageList();
+  initAdminMap();
+}
+
+function renderTriageList() {
+  const wrap = document.getElementById('triage-booking-list');
+  if (!wrap) return;
+
+  const today = new Date().toISOString().split('T')[0];
+  // Show unassigned + active (not completed/cancelled) sorted by date
+  const active = triageBookings
+    .filter(b => !['completed','cancelled'].includes(b.triageStatus) && b.date >= today)
+    .sort((a, b) => (a.date+a.time) < (b.date+b.time) ? -1 : 1);
+
+  if (!active.length) {
+    wrap.innerHTML = '<div class="empty-state" style="padding:40px 10px">No active unassigned jobs.</div>';
+    return;
+  }
+
+  wrap.innerHTML = active.map(b => {
+    const assigned = b.assignedTo;
+    const statusClass = assigned ? 'tb-' + (b.triageStatus||'assigned') : 'tb-unassigned';
+    const statusLabel = assigned ? (b.assignedName || 'Assigned') : 'Unassigned';
+    const isSelected = b.id === selectedBookingId;
+    return `
+      <div class="booking-card ${assigned?'assigned-card':''} ${isSelected?'selected':''}"
+           onclick="selectTriageBooking('${b.id}')" style="cursor:pointer">
+        <div class="booking-card-header">
+          <div class="booking-name">${escHtml(b.name)}</div>
+        </div>
+        <div class="booking-date">${escHtml(b.date)}${b.time?' at '+escHtml(b.time):''}</div>
+        ${b.service?`<div class="booking-detail">${escHtml(b.service)}</div>`:''}
+        ${b.address?`<div class="booking-detail">📍 ${escHtml(b.address)}</div>`:''}
+        <div class="booking-triage-row">
+          <span class="triage-badge ${statusClass}">${escHtml(statusLabel)}</span>
+          ${!assigned?`<button class="assign-btn" onclick="event.stopPropagation();autoAssign('${b.id}')">Auto-assign</button>`:''}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+async function selectTriageBooking(bookingId) {
+  selectedBookingId = bookingId;
+  renderTriageList();
+
+  const scoresEl = document.getElementById('triage-scores');
+  scoresEl.innerHTML = '<div class="triage-scores-title">Calculating scores…</div>';
+
+  const r = await fetch(`/api/admin/triage/${bookingId}/scores`, {
+    headers: { 'Authorization': 'Bearer ' + adminToken },
+  });
+  const data = await r.json();
+
+  renderTriageScores(data, bookingId);
+  updateAdminMapForBooking(data);
+}
+
+function renderTriageScores({ scores, recommended }, bookingId) {
+  const scoresEl = document.getElementById('triage-scores');
+  if (!scores?.length) {
+    scoresEl.innerHTML = '<div class="triage-scores-title">No eligible engineers found. Check team skills and locations.</div>';
+    return;
+  }
+
+  const maxScore = Math.max(...scores.map(s => s.score), 1);
+  const booking = triageBookings.find(b => b.id === bookingId);
+  const currentAssignee = booking?.assignedTo;
+
+  scoresEl.innerHTML = `
+    <div class="triage-scores-title">Engineer Scores — lower is better</div>
+    ${scores.map(s => `
+      <div class="engineer-score-row">
+        <div style="min-width:0;flex:1">
+          <div style="display:flex;align-items:center;gap:6px">
+            <div class="esc-name">${escHtml(s.name)}</div>
+            ${s.id === recommended?'<span class="esc-recommended">✓ Best match</span>':''}
+          </div>
+          ${s.skills?.length?`<div class="esc-skills">${s.skills.join(' · ')}</div>`:''}
+          <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
+            <div class="esc-bar"><div class="esc-bar-fill" style="width:${Math.round((1 - s.score/maxScore)*100)}%"></div></div>
+            <div class="esc-score">score ${s.score}</div>
+          </div>
+        </div>
+        <button class="assign-btn ${currentAssignee===s.id?'assigned':''}"
+                onclick="manualAssign('${bookingId}','${s.id}')">
+          ${currentAssignee===s.id?'Assigned':'Assign'}
+        </button>
+      </div>`).join('')}`;
+}
+
+function updateAdminMapForBooking({ scores, jobCoords }) {
+  if (!adminMap) return;
+  // Clear existing markers
+  adminMapMarkers.forEach(m => adminMap.removeLayer(m));
+  adminMapMarkers = [];
+
+  const bounds = [];
+
+  // Job location
+  if (jobCoords) {
+    const m = L.marker([jobCoords.lat, jobCoords.lng], {
+      icon: L.divIcon({ className: '', html: '<div style="width:14px;height:14px;border-radius:50%;background:#c9a96e;border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.3)"></div>', iconSize:[14,14], iconAnchor:[7,7] })
+    }).addTo(adminMap).bindPopup('<strong>Job location</strong>');
+    adminMapMarkers.push(m);
+    bounds.push([jobCoords.lat, jobCoords.lng]);
+  }
+
+  // Engineers
+  scores?.forEach(s => {
+    if (!s.coords) return;
+    const { lat, lng } = s.coords;
+    const color = s.id === scores[0]?.id ? '#3d7a5e' : '#8a8a8a';
+    const m = L.circleMarker([lat, lng], {
+      radius: 8, fillColor: color, color: '#fff', weight: 2, fillOpacity: 0.9
+    }).addTo(adminMap).bindPopup(`<strong>${s.name}</strong><br>Score: ${s.score}`);
+    adminMapMarkers.push(m);
+    bounds.push([lat, lng]);
+
+    // Draw line from engineer to job
+    if (jobCoords) {
+      const line = L.polyline([[lat, lng], [jobCoords.lat, jobCoords.lng]], {
+        color, weight: 1.5, opacity: 0.4, dashArray: '4,4'
+      }).addTo(adminMap);
+      adminMapMarkers.push(line);
+    }
+  });
+
+  if (bounds.length > 1) adminMap.fitBounds(bounds, { padding: [40, 40] });
+  else if (bounds.length === 1) adminMap.setView(bounds[0], 11);
+}
+
+function initAdminMap() {
+  if (adminMap) { adminMap.invalidateSize(); return; }
+  setTimeout(() => {
+    if (!document.getElementById('admin-map')) return;
+    adminMap = L.map('admin-map').setView([51.5, -1.5], 7);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors'
+    }).addTo(adminMap);
+
+    // Plot all team member base locations
+    teamMembers.forEach(m => {
+      if (!m.coords) return;
+      L.circleMarker([m.coords.lat, m.coords.lng], {
+        radius: 6, fillColor: '#c9a96e', color: '#fff', weight: 2, fillOpacity: 0.8
+      }).addTo(adminMap).bindPopup(`<strong>${m.name}</strong><br>${m.baseLocation||''}`);
+    });
+  }, 100);
+}
+
+async function autoAssign(bookingId) {
+  const r = await fetch(`/api/admin/triage/${bookingId}`, {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + adminToken },
+  });
+  const d = await r.json();
+  if (d.ok) {
+    showToast(`Assigned to ${d.assigned} — notification sent`);
+    loadTriage();
+  } else {
+    showToast(d.error || 'Could not auto-assign');
+  }
+}
+
+async function manualAssign(bookingId, engineerId) {
+  const r = await fetch(`/api/admin/triage/${bookingId}/assign/${engineerId}`, {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + adminToken },
+  });
+  const d = await r.json();
+  if (d.ok) {
+    const eng = teamMembers.find(e => e.id === engineerId);
+    showToast(`Assigned to ${eng?.name||'engineer'} — notification sent`);
+    loadTriage();
+    selectTriageBooking(bookingId);
+  }
+}
+
+async function autoTriageAll() {
+  const today = new Date().toISOString().split('T')[0];
+  const unassigned = triageBookings.filter(b =>
+    !b.assignedTo &&
+    !['completed','cancelled'].includes(b.triageStatus) &&
+    b.date >= today
+  );
+  if (!unassigned.length) { showToast('No unassigned jobs to triage'); return; }
+
+  let count = 0;
+  for (const b of unassigned) {
+    const r = await fetch(`/api/admin/triage/${b.id}`, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + adminToken },
+    });
+    if ((await r.json()).ok) count++;
+  }
+  showToast(`${count} job${count!==1?'s':''} assigned`);
+  loadTriage();
+}
+
+// Load team when setup view opens with admin
+const _origPopulateAdmin = populateAdmin;
+function populateAdmin() {
+  _origPopulateAdmin();
+  if (adminToken) loadTeam();
+}
+</script>
+</body>
+</html>
