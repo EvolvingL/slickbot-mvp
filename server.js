@@ -776,6 +776,9 @@ app.post("/api/chat", chatLimiter, async (req, res) => {
     });
 
     const data = await resp.json();
+    if (!resp.ok || data.error) {
+      console.error("[Chat] Anthropic API error:", JSON.stringify(data));
+    }
     let reply = data.content?.[0]?.text || "Something went wrong — shall we try that again?";
 
     // ── Check for moderation tokens ───────────────────────────────────────────
