@@ -1494,8 +1494,10 @@ app.get("/api/widget-config", (req, res) => {
   res.json({ bizName, greeting, hours, phone, email, services, plan });
 });
 
-// GET /chat — the embeddable chat iframe (served as static file from public/)
-// (already handled by express.static — chat.html is in public/)
+// GET /chat — the embeddable chat iframe
+app.get("/chat", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "chat.html"));
+});
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
