@@ -520,7 +520,8 @@ textarea.ai{min-height:56px;resize:vertical}
         <label style="font-size:10px;color:var(--silver);letter-spacing:.5px;text-transform:uppercase;display:block;margin-bottom:6px">Email</label>
         <input class="inp" id="auth-email" type="email" placeholder="you@yourbusiness.co.uk" style="width:100%;box-sizing:border-box">
       </div>
-      <button class="btn btn-gold" id="checkout-btn" onclick="goToCheckout()" style="width:100%;justify-content:center;margin-bottom:12px">Continue to Payment →</button>
+      <button class="btn btn-gold" id="checkout-btn" onclick="goToCheckout()" style="width:100%;justify-content:center;margin-bottom:8px">Continue to Payment →</button>
+      <button onclick="skipPayment()" style="width:100%;background:none;border:1px solid var(--iron);border-radius:8px;color:var(--silver);cursor:pointer;font-size:10px;padding:8px;margin-bottom:12px;">Skip payment (dev only)</button>
       <div style="text-align:center;font-size:10px;color:var(--silver)">
         Already have an account?
         <button onclick="showLoginStep()" style="background:none;border:none;color:var(--gold);cursor:pointer;font-size:10px;padding:0 4px;">Sign in</button>
@@ -980,6 +981,21 @@ function showLoginStep() {
   document.getElementById('login-email').focus();
 }
 
+async function skipPayment() {
+  const email = document.getElementById('auth-email').value.trim();
+  const errEl = document.getElementById('auth-error-checkout');
+  errEl.style.display = 'none';
+  if (!email) { errEl.textContent = 'Please enter your email first.'; errEl.style.display = 'block'; return; }
+  try {
+    const r = await fetch('/api/dev/activate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
+    const data = await r.json();
+    if (!r.ok) { errEl.textContent = data.error || 'Bypass not available.'; errEl.style.display = 'block'; return; }
+    showRegisterStep(email);
+  } catch(e) {
+    errEl.textContent = 'Connection error.'; errEl.style.display = 'block';
+  }
+}
+
 async function goToCheckout() {
   const email = document.getElementById('auth-email').value.trim();
   const errEl = document.getElementById('auth-error-checkout');
@@ -993,7 +1009,8 @@ async function goToCheckout() {
     const r = await fetch('/api/checkout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ plan: selectedPlan, email })
+      body: JSON.stringify({ plan: selectedPlan, email }),
+      credentials: 'include',
     });
     const data = await r.json();
     if (data.url) {

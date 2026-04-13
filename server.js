@@ -547,6 +547,18 @@ app.get("/api/auth/me", (req, res) => {
   res.json({ loggedIn: true, email: req.user.email, subscribed: req.user.is_subscribed, plan: req.user.plan });
 });
 
+// ── Dev bypass (skip payment) — only enabled when DEV_BYPASS=true ─────────────
+app.post("/api/dev/activate", async (req, res) => {
+  if (process.env.DEV_BYPASS !== "true") return res.status(403).json({ error: "Not available." });
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: "email required." });
+  await db.query(`
+    INSERT INTO gloria_prepaid (email, stripe_customer_id, plan) VALUES ($1, 'dev_bypass', 'essential')
+    ON CONFLICT (email) DO UPDATE SET stripe_customer_id='dev_bypass', plan='essential'
+  `, [email.toLowerCase()]);
+  res.json({ ok: true });
+});
+
 // ── Stripe Checkout ───────────────────────────────────────────────────────────
 app.post("/api/checkout", async (req, res) => {
   const { plan, email } = req.body;
