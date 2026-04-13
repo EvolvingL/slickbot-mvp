@@ -708,7 +708,7 @@ app.post("/api/chat", chatLimiter, async (req, res) => {
   const cfgFile = widgetKey
     ? path.join(__dirname, "data", `widget_${widgetKey}.json`)
     : DATA_FILE;
-  const cfg = readData(cfgFile, DEFAULT_CONFIG);
+  const cfg = readData(cfgFile, null) || readData(DATA_FILE, DEFAULT_CONFIG);
 
   try {
     const fetch = (await import("node-fetch")).default;
@@ -1486,9 +1486,10 @@ app.get("/api/widget-config", (req, res) => {
   const { key } = req.query;
   if (!key) return res.status(400).json({ error: "key required" });
 
+  // Try per-widget config first, fall back to main config.json
   const configFile = path.join(__dirname, "data", `widget_${key}.json`);
-  const cfg = readData(configFile, null);
-  if (!cfg) return res.status(404).json({ error: "Widget not found" });
+  let cfg = readData(configFile, null);
+  if (!cfg) cfg = readData(DATA_FILE, DEFAULT_CONFIG);
 
   // Return only safe public fields
   const { bizName, greeting, hours, phone, email, services, plan } = cfg;
