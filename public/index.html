@@ -406,17 +406,20 @@ textarea.ai{min-height:56px;resize:vertical}
 <nav class="nav">
   <span class="nav-wordmark">G<em>loria</em></span>
   <div class="nav-divider"></div>
-  <span class="nav-descriptor">The Intelligent Receptionist</span>
-  <div class="nav-tabs">
-    <button class="nav-tab" id="tab-setup" onclick="switchView('setup')">Setup</button>
-    <button class="nav-tab" id="tab-demo" onclick="switchView('demo')">Live Preview</button>
+  <span class="nav-descriptor">AI Receptionist</span>
+  <div class="nav-tabs" id="nav-tabs-admin" style="display:none">
+    <button class="nav-tab" id="tab-demo" onclick="switchView('demo')">Admin</button>
     <button class="nav-tab" id="tab-qa" onclick="requireAdmin('qa')">Sessions</button>
     <button class="nav-tab" id="tab-bookings" onclick="requireAdmin('bookings')">Bookings</button>
     <button class="nav-tab" id="tab-triage" onclick="requireAdmin('triage')">Dispatch</button>
   </div>
-  <div class="nav-status" id="nav-status">
-    <div class="status-dot"></div>
-    <span>Live</span>
+  <div style="margin-left:auto;display:flex;align-items:center;gap:12px">
+    <div class="nav-status" id="nav-status">
+      <div class="status-dot"></div>
+      <span>Live</span>
+    </div>
+    <button id="nav-signin-btn" onclick="showLoginModal()" style="background:none;border:1px solid var(--iron);border-radius:var(--r);color:var(--silver);cursor:pointer;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;padding:6px 14px;font-family:var(--sans);transition:all .2s" onmouseover="this.style.color='var(--pearl)'" onmouseout="this.style.color='var(--silver)'">Sign in</button>
+    <button id="nav-signout-btn" onclick="signOut()" style="display:none;background:none;border:1px solid var(--iron);border-radius:var(--r);color:var(--silver);cursor:pointer;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;padding:6px 14px;font-family:var(--sans);transition:all .2s" onmouseover="this.style.color='var(--pearl)'" onmouseout="this.style.color='var(--silver)'">Sign out</button>
   </div>
 </nav>
 
@@ -904,6 +907,9 @@ async function init() {
   if (params.get('checkout') === 'success') {
     const returnEmail = params.get('email') || '';
     history.replaceState({}, '', '/');
+    // Restore the URL the user entered before payment
+    const savedUrl = localStorage.getItem('gloria_pending_url');
+    if (savedUrl) document.getElementById('url-input').value = savedUrl;
     showToast('Payment confirmed — create your password to activate your account.');
     showRegisterStep(returnEmail);
     return;
@@ -915,16 +921,15 @@ async function init() {
     const me = await meResp.json();
     if (me.loggedIn && me.subscribed) {
       currentUser = me;
+      updateNavAuth();
       const r = await fetch('/api/config');
       config = await r.json();
       services = [...(config.services || [])];
       populateAdmin();
       applyPlanUI(config.plan || 'essential');
-      if (config.isLive) {
-        switchView('demo');
+      switchView('demo');
+      if (config.scannedContent) {
         startChat();
-      } else {
-        switchView('setup');
       }
       return;
     }
@@ -944,6 +949,31 @@ function selectPlan(plan) {
     if (plan === 'professional') li.classList.remove('muted');
     else li.classList.toggle('muted', i >= 3);
   });
+}
+
+// ── Nav state ──────────────────────────────────────────────────────────────────
+function updateNavAuth() {
+  const isAuthed = currentUser?.subscribed;
+  document.getElementById('nav-tabs-admin').style.display = isAuthed ? 'flex' : 'none';
+  document.getElementById('nav-signin-btn').style.display = isAuthed ? 'none' : '';
+  document.getElementById('nav-signout-btn').style.display = isAuthed ? '' : 'none';
+}
+
+function showLoginModal() {
+  showLoginStep();
+  const m = document.getElementById('auth-modal');
+  m.removeAttribute('hidden');
+  m.style.display = 'flex';
+}
+
+async function signOut() {
+  await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+  currentUser = null;
+  config = {};
+  services = [];
+  updateNavAuth();
+  switchView('setup');
+  showToast('Signed out.');
 }
 
 // ── Auth modal ─────────────────────────────────────────────────────────────────
@@ -986,6 +1016,9 @@ async function skipPayment() {
   const errEl = document.getElementById('auth-error-checkout');
   errEl.style.display = 'none';
   if (!email) { errEl.textContent = 'Please enter your email first.'; errEl.style.display = 'block'; return; }
+  // Remember the URL the user entered before going through auth
+  const pendingUrl = document.getElementById('url-input').value.trim();
+  if (pendingUrl) localStorage.setItem('gloria_pending_url', pendingUrl);
   try {
     const r = await fetch('/api/dev/activate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
     const data = await r.json();
@@ -1004,6 +1037,10 @@ async function goToCheckout() {
 
   const btn = document.getElementById('checkout-btn');
   btn.disabled = true; btn.textContent = 'Redirecting…';
+
+  // Remember the URL the user entered before redirecting to Stripe
+  const pendingUrl = document.getElementById('url-input').value.trim();
+  if (pendingUrl) localStorage.setItem('gloria_pending_url', pendingUrl);
 
   try {
     const r = await fetch('/api/checkout', {
@@ -1046,9 +1083,26 @@ async function submitRegister() {
 
     currentUser = { email, subscribed: data.subscribed };
     closeAuthModal();
-    showToast('Account activated — scanning your site now.');
-    // Auto-trigger scan
-    document.getElementById('scan-btn').click();
+    updateNavAuth();
+    // Load config and go straight to admin portal
+    const cfgResp = await fetch('/api/config');
+    config = await cfgResp.json();
+    services = [...(config.services || [])];
+    populateAdmin();
+    applyPlanUI(config.plan || 'essential');
+    switchView('demo');
+    showToast('Account activated — welcome to your admin portal.');
+    // If no content scanned yet, auto-run scan using the saved URL
+    if (!config.scannedContent) {
+      const savedUrl = localStorage.getItem('gloria_pending_url');
+      if (savedUrl) {
+        document.getElementById('url-input').value = savedUrl;
+        localStorage.removeItem('gloria_pending_url');
+      }
+      if (document.getElementById('url-input').value.trim()) {
+        runScanDirect();
+      }
+    }
   } catch(e) {
     errEl.textContent = 'Connection error. Please try again.'; errEl.style.display = 'block';
     btn.disabled = false; btn.textContent = 'Activate Account →';
@@ -1076,13 +1130,28 @@ async function submitLogin() {
 
     currentUser = { email, subscribed: data.subscribed };
     closeAuthModal();
+    updateNavAuth();
     if (data.subscribed) {
       showToast('Welcome back.');
       const cfgResp = await fetch('/api/config');
       config = await cfgResp.json();
       services = [...(config.services || [])];
       populateAdmin();
-      if (config.isLive) { switchView('demo'); startChat(); } else { switchView('setup'); }
+      applyPlanUI(config.plan || 'essential');
+      switchView('demo');
+      // If no content scanned yet, auto-run scan using any saved URL
+      if (!config.scannedContent) {
+        const savedUrl = localStorage.getItem('gloria_pending_url');
+        if (savedUrl) {
+          document.getElementById('url-input').value = savedUrl;
+          localStorage.removeItem('gloria_pending_url');
+        }
+        if (document.getElementById('url-input').value.trim()) {
+          runScanDirect();
+        }
+      } else {
+        startChat();
+      }
     } else {
       showToast('No active subscription found.');
     }
@@ -1125,12 +1194,13 @@ function switchView(v) {
 }
 
 function requireAdmin(targetView) {
-  if (adminToken) { switchView(targetView); return; }
-  pendingView = targetView;
-  document.getElementById('login-overlay').style.display = 'flex';
-  document.getElementById('login-pw').value = '';
-  document.getElementById('login-err').style.display = 'none';
-  setTimeout(() => document.getElementById('login-pw').focus(), 100);
+  // Session-authenticated subscribed users can access admin views directly
+  if (currentUser?.subscribed || adminToken) { switchView(targetView); return; }
+  // Unauthenticated: show login modal instead of password overlay
+  showLoginStep();
+  const m = document.getElementById('auth-modal');
+  m.removeAttribute('hidden');
+  m.style.display = 'flex';
 }
 
 async function doLogin() {
@@ -1232,7 +1302,7 @@ function upgradeBack(step) {
 }
 
 async function confirmUpgrade() {
-  if (!adminToken) { closeUpgradeModal(); requireAdmin('demo'); return; }
+  if (!currentUser?.subscribed && !adminToken) { closeUpgradeModal(); requireAdmin('demo'); return; }
   const errEl = document.getElementById('ustep3-err');
   errEl.style.display = 'none';
   const phone = document.getElementById('u-phone').value.trim();
@@ -1241,7 +1311,7 @@ async function confirmUpgrade() {
   try {
     await fetch('/api/admin/config', {
       method: 'POST',
-      headers: {'Content-Type':'application/json','Authorization':'Bearer ' + adminToken},
+      headers: {'Content-Type':'application/json'}, credentials: 'include',
       body: JSON.stringify({
         plan: 'paid',
         adminNotifyMethod: upgradeMethod,
@@ -1293,8 +1363,6 @@ async function startScan() {
     }
   }
 
-  if (!adminToken) { requireAdmin('setup'); return; }
-
   document.getElementById('scan-btn').disabled = true;
   document.getElementById('url-input').disabled = true;
   document.getElementById('scan-box').style.display = 'block';
@@ -1307,7 +1375,8 @@ async function startScan() {
   try {
     resp = await fetch('/api/scan', {
       method: 'POST',
-      headers: {'Content-Type':'application/json','Authorization':'Bearer ' + adminToken},
+      headers: {'Content-Type':'application/json'},
+      credentials: 'include',
       body: JSON.stringify({ url })
     });
   } catch (err) {
@@ -1368,6 +1437,10 @@ async function startScan() {
               }
               await saveFieldBatch(patch);
               await reloadConfig();
+              // Go to admin portal (demo view) after scan completes
+              if (currentUser?.subscribed) {
+                setTimeout(() => { switchView('demo'); startChat(); }, 800);
+              }
             }
           }
         } catch (parseErr) {
@@ -1382,6 +1455,13 @@ async function startScan() {
 
   document.getElementById('scan-btn').disabled = false;
   document.getElementById('url-input').disabled = false;
+}
+
+// Called after register/login to auto-scan without requiring adminToken or subscription gate
+async function runScanDirect() {
+  // Switch to setup view so scan UI is visible, then start scan
+  switchView('setup');
+  await startScan();
 }
 
 function addScanLog(text, done) {
@@ -1404,10 +1484,10 @@ function hideScanError() {
 }
 
 async function saveFieldBatch(patch) {
-  if (!adminToken) return;
   await fetch('/api/admin/config', {
     method: 'POST',
-    headers: {'Content-Type':'application/json','Authorization':'Bearer ' + adminToken},
+    headers: {'Content-Type':'application/json'},
+    credentials: 'include',
     body: JSON.stringify(patch)
   });
 }
@@ -1496,7 +1576,7 @@ document.addEventListener('keydown', e => {
 });
 
 async function saveConfig() {
-  if (!adminToken) { requireAdmin('demo'); return; }
+  if (!currentUser?.subscribed && !adminToken) { requireAdmin('demo'); return; }
   const fields = ['bizName','hours','phone','email','priceHints','paymentMethods','calendarLink','extraInfo','greeting','adminNotifyMethod','adminNotifyPhone','adminNotifyEmail'];
   const body = { services };
   fields.forEach(f => {
@@ -1505,7 +1585,7 @@ async function saveConfig() {
   });
   await fetch('/api/admin/config', {
     method: 'POST',
-    headers: {'Content-Type':'application/json','Authorization':'Bearer ' + adminToken},
+    headers: {'Content-Type':'application/json'}, credentials: 'include',
     body: JSON.stringify(body)
   });
   config = { ...config, ...body };
@@ -1514,13 +1594,13 @@ async function saveConfig() {
 }
 
 async function testNotify() {
-  if (!adminToken) { requireAdmin('demo'); return; }
+  if (!currentUser?.subscribed && !adminToken) { requireAdmin('demo'); return; }
   const method = document.getElementById('f-adminNotifyMethod').value;
   const phone = document.getElementById('f-adminNotifyPhone').value.trim();
   const email = document.getElementById('f-adminNotifyEmail').value.trim();
   const r = await fetch('/api/admin/test-notify', {
     method: 'POST',
-    headers: {'Content-Type':'application/json','Authorization':'Bearer ' + adminToken},
+    headers: {'Content-Type':'application/json'}, credentials: 'include',
     body: JSON.stringify({ method, phone, email })
   });
   const d = await r.json();
@@ -1761,8 +1841,8 @@ document.addEventListener('keydown', e => {
 
 // ── Sessions (QA) ──────────────────────────────────────────────────────────────
 async function loadSessions() {
-  if (!adminToken) return;
-  const r = await fetch('/api/admin/sessions', { headers: {'Authorization':'Bearer ' + adminToken} });
+  if (!currentUser?.subscribed && !adminToken) return;
+  const r = await fetch('/api/admin/sessions', { credentials: 'include' });
   const sessions = await r.json();
   const body = document.getElementById('qa-body');
   if (!sessions.length) {
@@ -1819,7 +1899,7 @@ function renderTakeoverBar(session) {
 async function takeOver(sid) {
   await fetch('/api/admin/message', {
     method: 'POST',
-    headers: {'Content-Type':'application/json','Authorization':'Bearer ' + adminToken},
+    headers: {'Content-Type':'application/json'}, credentials: 'include',
     body: JSON.stringify({ sessionId: sid, message: 'I have joined this conversation.' })
   });
   showToast('You have taken over this session');
@@ -1829,7 +1909,7 @@ async function takeOver(sid) {
 async function handBack(sid) {
   await fetch('/api/admin/handback', {
     method: 'POST',
-    headers: {'Content-Type':'application/json','Authorization':'Bearer ' + adminToken},
+    headers: {'Content-Type':'application/json'}, credentials: 'include',
     body: JSON.stringify({ sessionId: sid })
   });
   showToast('Session returned to Gloria');
@@ -1842,7 +1922,7 @@ async function sendAdminMsg(sid) {
   if (!msg) return;
   await fetch('/api/admin/message', {
     method: 'POST',
-    headers: {'Content-Type':'application/json','Authorization':'Bearer ' + adminToken},
+    headers: {'Content-Type':'application/json'}, credentials: 'include',
     body: JSON.stringify({ sessionId: sid, message: msg })
   });
   if (inp) inp.value = '';
@@ -1852,15 +1932,15 @@ async function sendAdminMsg(sid) {
 
 async function clearSessions() {
   if (!confirm('Clear all session logs? This cannot be undone.')) return;
-  await fetch('/api/admin/sessions', { method: 'DELETE', headers: {'Authorization':'Bearer ' + adminToken} });
+  await fetch('/api/admin/sessions', { method: 'DELETE', credentials: 'include' });
   loadSessions();
   showToast('Sessions cleared');
 }
 
 // ── Bookings ───────────────────────────────────────────────────────────────────
 async function loadBookings() {
-  if (!adminToken) return;
-  const r = await fetch('/api/admin/bookings', { headers: {'Authorization':'Bearer ' + adminToken} });
+  if (!currentUser?.subscribed && !adminToken) return;
+  const r = await fetch('/api/admin/bookings', { credentials: 'include' });
   const bookings = await r.json();
   const body = document.getElementById('bookings-body');
   if (!bookings.length) {
@@ -1939,8 +2019,8 @@ function lockChat(message) {
 let upgradeCalendarConnected = null;
 
 async function connectCalendar(provider) {
-  if (!adminToken) return;
-  const r = await fetch(`/api/oauth/${provider}`, { headers: {'Authorization':'Bearer ' + adminToken} });
+  if (!currentUser?.subscribed && !adminToken) return;
+  const r = await fetch(`/api/oauth/${provider}`, { credentials: 'include' });
   const d = await r.json();
   if (d.error) {
     document.getElementById('cal-setup-note').style.display = 'block';
@@ -1952,7 +2032,7 @@ async function connectCalendar(provider) {
     const poll = setInterval(async () => {
       if (win.closed) {
         clearInterval(poll);
-        const s = await fetch('/api/calendar/status', { headers: {'Authorization':'Bearer ' + adminToken} });
+        const s = await fetch('/api/calendar/status', { credentials: 'include' });
         const sd = await s.json();
         if (sd.connected) {
           upgradeCalendarConnected = sd.connected;
@@ -1968,8 +2048,8 @@ async function connectCalendar(provider) {
 }
 
 async function disconnectCalendar() {
-  if (!adminToken) return;
-  await fetch('/api/oauth/disconnect', { method: 'POST', headers: {'Authorization':'Bearer ' + adminToken} });
+  if (!currentUser?.subscribed && !adminToken) return;
+  await fetch('/api/oauth/disconnect', { method: 'POST', credentials: 'include' });
   upgradeCalendarConnected = null;
   document.getElementById('cal-connected-msg').style.display = 'none';
   document.getElementById('cal-options').style.opacity = '';
@@ -2426,8 +2506,8 @@ let teamMembers = [];
 let editingMemberId = null;
 
 async function loadTeam() {
-  if (!adminToken) return;
-  const r = await fetch('/api/admin/team', { headers: { 'Authorization': 'Bearer ' + adminToken } });
+  if (!currentUser?.subscribed && !adminToken) return;
+  const r = await fetch('/api/admin/team', { credentials: 'include' });
   teamMembers = await r.json();
   renderTeamList();
 }
@@ -2498,7 +2578,7 @@ async function saveMember() {
   };
   const r = await fetch('/api/admin/team', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + adminToken },
+    headers: { 'Content-Type': 'application/json' }, credentials: 'include',
     body: JSON.stringify(body),
   });
   const d = await r.json();
@@ -2517,7 +2597,7 @@ async function removeMember(id) {
   if (!confirm('Remove this team member?')) return;
   await fetch(`/api/admin/team/${id}`, {
     method: 'DELETE',
-    headers: { 'Authorization': 'Bearer ' + adminToken },
+    credentials: 'include',
   });
   loadTeam();
 }
@@ -2532,10 +2612,10 @@ let selectedBookingId = null;
 let triageBookings = [];
 
 async function loadTriage() {
-  if (!adminToken) return;
+  if (!currentUser?.subscribed && !adminToken) return;
   const [bRes, tRes] = await Promise.all([
-    fetch('/api/admin/bookings', { headers: { 'Authorization': 'Bearer ' + adminToken } }),
-    fetch('/api/admin/team',     { headers: { 'Authorization': 'Bearer ' + adminToken } }),
+    fetch('/api/admin/bookings', { credentials: 'include' }),
+    fetch('/api/admin/team',     { credentials: 'include' }),
   ]);
   triageBookings = await bRes.json();
   teamMembers = await tRes.json();
@@ -2589,7 +2669,7 @@ async function selectTriageBooking(bookingId) {
   scoresEl.innerHTML = '<div class="triage-scores-title">Calculating scores…</div>';
 
   const r = await fetch(`/api/admin/triage/${bookingId}/scores`, {
-    headers: { 'Authorization': 'Bearer ' + adminToken },
+    credentials: 'include',
   });
   const data = await r.json();
 
@@ -2693,7 +2773,7 @@ function initAdminMap() {
 async function autoAssign(bookingId) {
   const r = await fetch(`/api/admin/triage/${bookingId}`, {
     method: 'POST',
-    headers: { 'Authorization': 'Bearer ' + adminToken },
+    credentials: 'include',
   });
   const d = await r.json();
   if (d.ok) {
@@ -2707,7 +2787,7 @@ async function autoAssign(bookingId) {
 async function manualAssign(bookingId, engineerId) {
   const r = await fetch(`/api/admin/triage/${bookingId}/assign/${engineerId}`, {
     method: 'POST',
-    headers: { 'Authorization': 'Bearer ' + adminToken },
+    credentials: 'include',
   });
   const d = await r.json();
   if (d.ok) {
@@ -2731,7 +2811,7 @@ async function autoTriageAll() {
   for (const b of unassigned) {
     const r = await fetch(`/api/admin/triage/${b.id}`, {
       method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + adminToken },
+      credentials: 'include',
     });
     if ((await r.json()).ok) count++;
   }
@@ -2743,7 +2823,7 @@ async function autoTriageAll() {
 const _origPopulateAdmin = populateAdmin;
 function populateAdmin() {
   _origPopulateAdmin();
-  if (adminToken) loadTeam();
+  if (currentUser?.subscribed || adminToken) loadTeam();
 }
 </script>
 </body>
