@@ -190,9 +190,10 @@ async function init() {
   if (biz) document.getElementById('biz-sub').textContent = biz;
 
   const tod = timeOfDay();
-  const greeting = config.greeting || (biz
+  const knownBiz = biz && biz !== "Your Business";
+  const greeting = config.greeting || (knownBiz
     ? `${tod}. I'm Gloria — I'm the receptionist here at ${biz}. How may I assist you today?`
-    : `${tod}. I'm Gloria, your AI receptionist. How can I help?`);
+    : `${tod}. I'm Gloria — I'm the receptionist here. How may I assist you today?`);
 
   addMsg('bot', greeting);
   document.getElementById('chat-input').focus();
