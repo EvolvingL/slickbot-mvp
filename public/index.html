@@ -728,6 +728,31 @@ textarea.ai{min-height:56px;resize:vertical}
         </div>
 
         <div class="section">
+          <div class="section-head" onclick="toggleSection('missedcall')">
+            <span class="section-label">Missed Call Intercept</span>
+            <span class="section-caret" id="caret-missedcall">▾</span>
+          </div>
+          <div class="section-body" id="sec-missedcall" style="display:none">
+            <p style="font-size:10px;color:var(--ash);line-height:1.8;margin-bottom:12px">When a customer calls your Twilio number and you don't answer, Gloria picks up after ~10 seconds, plays this message, then immediately texts them a link to the chat window.</p>
+            <div class="field" style="margin-bottom:10px">
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:11px;color:var(--silver)">
+                <input type="checkbox" id="f-missedCallEnabled" style="accent-color:var(--gold);width:13px;height:13px"> Enable missed call intercept
+              </label>
+            </div>
+            <div class="field">
+              <label>Voicemail message</label>
+              <textarea class="ai" id="f-missedCallMessage" style="min-height:72px" placeholder="Thanks for calling — we're just on a job at the minute, but I'm going to send you a link to our receptionist so you can ask any questions and book us out."></textarea>
+            </div>
+            <div style="background:var(--charcoal);border:1px solid var(--pewter);border-radius:var(--r);padding:10px 12px;margin-top:4px">
+              <div style="font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--gold);margin-bottom:6px;font-weight:500">Twilio setup</div>
+              <p style="font-size:10px;color:var(--ash);line-height:1.8">In your <strong style="color:var(--silver)">Twilio Console</strong>, set the webhook for your phone number's incoming calls to:</p>
+              <code id="missed-call-webhook-url" style="display:block;margin:6px 0;font-size:10px;color:var(--gold);word-break:break-all;background:var(--graphite);padding:6px 8px;border-radius:var(--r);border:1px solid var(--pewter)"></code>
+              <p style="font-size:10px;color:var(--ash);line-height:1.8;margin-top:4px">Method: <strong style="color:var(--silver)">HTTP POST</strong>. Make sure <strong style="color:var(--silver)">TWILIO_SID</strong>, <strong style="color:var(--silver)">TWILIO_TOKEN</strong>, and <strong style="color:var(--silver)">TWILIO_FROM</strong> are set in your environment.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
           <div class="section-head" onclick="toggleSection('team')">
             <span class="section-label">Team &amp; Engineers</span>
             <span class="section-caret" id="caret-team">▾</span>
@@ -1597,11 +1622,18 @@ function openChatWindow() {
 
 // ── Admin panel ────────────────────────────────────────────────────────────────
 function populateAdmin() {
-  const fields = ['bizName','hours','phone','email','priceHints','paymentMethods','calendarLink','extraInfo','greeting','adminNotifyMethod','adminNotifyPhone','adminNotifyEmail'];
+  const fields = ['bizName','hours','phone','email','priceHints','paymentMethods','calendarLink','extraInfo','greeting','adminNotifyMethod','adminNotifyPhone','adminNotifyEmail','missedCallMessage'];
   fields.forEach(f => {
     const el = document.getElementById('f-' + f);
     if (el) el.value = config[f] || '';
   });
+  // Missed call checkbox
+  const mcCheck = document.getElementById('f-missedCallEnabled');
+  if (mcCheck) mcCheck.checked = !!config.missedCallEnabled;
+  // Webhook URL display
+  const webhookEl = document.getElementById('missed-call-webhook-url');
+  if (webhookEl) webhookEl.textContent = (window.location.origin) + '/voice/inbound';
+
   const bizName = document.getElementById('chat-biz-name');
   if (bizName) bizName.textContent = config.bizName || '—';
   renderServiceTags();
@@ -1646,12 +1678,15 @@ document.addEventListener('keydown', e => {
 
 async function saveConfig() {
   if (!currentUser?.subscribed && !adminToken) { requireAdmin('demo'); return; }
-  const fields = ['bizName','hours','phone','email','priceHints','paymentMethods','calendarLink','extraInfo','greeting','adminNotifyMethod','adminNotifyPhone','adminNotifyEmail'];
+  const fields = ['bizName','hours','phone','email','priceHints','paymentMethods','calendarLink','extraInfo','greeting','adminNotifyMethod','adminNotifyPhone','adminNotifyEmail','missedCallMessage'];
   const body = { services };
   fields.forEach(f => {
     const el = document.getElementById('f-' + f);
     if (el) body[f] = el.value;
   });
+  // Checkbox fields
+  const mcCheck = document.getElementById('f-missedCallEnabled');
+  if (mcCheck) body.missedCallEnabled = mcCheck.checked;
   await fetch('/api/admin/config', {
     method: 'POST',
     headers: {'Content-Type':'application/json'}, credentials: 'include',

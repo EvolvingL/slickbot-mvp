@@ -32,6 +32,8 @@ app.use((req, res, next) => {
     express.json()(req, res, next);
   }
 });
+// Twilio sends application/x-www-form-urlencoded for call webhooks
+app.use(express.urlencoded({ extended: false }));
 app.use(express.static(path.join(__dirname, "public")));
 
 // ── Rate limiting ─────────────────────────────────────────────────────────────
@@ -133,6 +135,9 @@ const DEFAULT_CONFIG = {
   twilioSid: process.env.TWILIO_SID || "",
   twilioToken: process.env.TWILIO_TOKEN || "",
   twilioFrom: process.env.TWILIO_FROM || "",
+  // Missed call intercept
+  missedCallMessage: "Thanks for calling — we're just on a job at the minute, but I'm going to send you a link to our receptionist so you can ask any questions and book us out.",
+  missedCallEnabled: false,
   // Calendar OAuth tokens (stored after user connects)
   googleTokens: null,
   outlookTokens: null,
@@ -1396,6 +1401,90 @@ app.post("/api/voice/speak", async (req, res) => {
     res.status(500).json({ error: "Voice service unavailable.", useWebSpeech: true, reply: "Sorry, something went wrong." });
   }
 });
+
+// ── Missed call intercept (Twilio inbound webhook) ────────────────────────────
+// Twilio calls this URL when someone rings the business's Twilio number.
+// We answer immediately, pause ~15 s (half the ~30 s ring cycle that feels natural),
+// play the voicemail message, hang up, then fire the SMS/email follow-up.
+app.post("/voice/inbound", async (req, res) => {
+  const cfg = (await readConfig(MAIN_CONFIG_KEY)) || DEFAULT_CONFIG;
+
+  // Guard: if the feature is disabled, fall through to normal ringing (no-op TwiML)
+  if (!cfg.missedCallEnabled) {
+    res.setHeader("Content-Type", "text/xml");
+    return res.send(`<?xml version="1.0" encoding="UTF-8"?><Response></Response>`);
+  }
+
+  const callerNumber = req.body.From || req.body.Caller || "";
+  const msg = cfg.missedCallMessage ||
+    "Thanks for calling — we're just on a job at the minute, but I'm going to send you a link to our receptionist so you can ask any questions and book us out.";
+
+  // Build the Gloria chat URL — uses the public BASE_URL
+  const chatLink = `${BASE_URL}/chat?key=${MAIN_CONFIG_KEY}`;
+
+  // Respond with TwiML:
+  //  - <Pause> 15 seconds so it feels like they rang before voicemail picked up
+  //  - <Say> the message using Amazon Polly Amy (natural British female, built into Twilio)
+  //  - <Hangup> ends the call cleanly
+  // After responding we fire the SMS asynchronously (can't do it before responding or Twilio times out)
+  res.setHeader("Content-Type", "text/xml");
+  res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Pause length="10"/>
+  <Say voice="Polly.Amy-Neural" language="en-GB">${escapeXml(msg)}</Say>
+  <Pause length="1"/>
+  <Hangup/>
+</Response>`);
+
+  // Fire-and-forget: send the follow-up message after TwiML is sent
+  if (callerNumber) {
+    sendMissedCallFollowUp({ cfg, callerNumber, chatLink }).catch(err =>
+      console.error("[MissedCall] Follow-up failed:", err.message)
+    );
+  }
+});
+
+// Helper: XML-escape for safe TwiML injection
+function escapeXml(str) {
+  return String(str || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+// Helper: send SMS then fall back to admin email notification if SMS fails
+async function sendMissedCallFollowUp({ cfg, callerNumber, chatLink }) {
+  const smsBody = `Hi — sorry we missed your call. You can reach our receptionist here any time:\n${chatLink}\n\nShe can answer questions and take a booking for you.`;
+
+  // Try SMS first
+  const smsResult = await sendSMS({ cfg, to: callerNumber, body: smsBody });
+  if (smsResult.ok) {
+    console.log(`[MissedCall] SMS sent to ${callerNumber}`);
+    return;
+  }
+
+  console.warn(`[MissedCall] SMS failed (${smsResult.reason}), trying email fallback…`);
+
+  // SMS failed — notify the admin so they can follow up manually,
+  // and attempt email if admin email is configured
+  const adminMsg = `Missed call from ${callerNumber}.\n\nSMS delivery failed (${smsResult.reason || "unknown"}).\n\nPlease follow up manually. The Gloria chat link to share is:\n${chatLink}`;
+
+  if (cfg.adminNotifyEmail) {
+    await sendEmail({
+      cfg,
+      to: cfg.adminNotifyEmail,
+      subject: `Missed call from ${callerNumber} — SMS failed, follow up needed`,
+      text: adminMsg,
+    }).catch(() => {});
+  }
+
+  // Also try admin SMS notification if different config
+  if (cfg.adminNotifyPhone && cfg.adminNotifyMethod === "sms") {
+    await sendSMS({ cfg, to: cfg.adminNotifyPhone, body: `Missed call from ${callerNumber} — SMS to caller failed. Follow up manually. Chat: ${chatLink}` }).catch(() => {});
+  }
+}
 
 // ── Admin routes ──────────────────────────────────────────────────────────────
 app.post("/api/admin/message", requireAdmin, (req, res) => {
