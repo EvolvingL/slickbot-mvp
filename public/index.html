@@ -434,17 +434,17 @@ textarea.ai{min-height:56px;resize:vertical}
       <div style="margin-bottom:20px">
         <div class="fld"><label>Choose your plan</label></div>
         <div class="plan-toggle" id="plan-toggle">
-          <button class="plan-opt selected" id="plan-free" onclick="selectPlan('free')">Essential &nbsp;·&nbsp; £5/mo</button>
-          <button class="plan-opt" id="plan-paid" onclick="selectPlan('paid')">Professional &nbsp;·&nbsp; £50/mo</button>
+          <button class="plan-opt selected" id="plan-essential" onclick="selectPlan('essential')">Essential &nbsp;·&nbsp; £25/mo</button>
+          <button class="plan-opt" id="plan-professional" onclick="selectPlan('professional')">Professional &nbsp;·&nbsp; £50/mo</button>
         </div>
         <ul class="plan-features" id="plan-features-list">
           <li>Website scan &amp; auto-configuration</li>
           <li>Gloria AI receptionist, live on your site 24/7</li>
           <li>Session &amp; enquiry logs (via admin panel)</li>
-          <li class="muted">Full admin panel — add pricing, FAQs, services — Professional only</li>
-          <li class="muted">SMS or email alerts to your phone — Professional only</li>
-          <li class="muted">Live chat takeover &amp; admin messaging — Professional only</li>
-          <li class="muted">Direct booking with Google, Outlook &amp; iCalendar invites — Professional only</li>
+          <li class="muted" id="feat-advanced-1">Full admin panel — add pricing, FAQs, services — Professional only</li>
+          <li class="muted" id="feat-advanced-2">SMS or email alerts to your phone — Professional only</li>
+          <li class="muted" id="feat-advanced-3">Live chat takeover &amp; admin messaging — Professional only</li>
+          <li class="muted" id="feat-advanced-4">Direct booking with Google, Outlook &amp; iCalendar invites — Professional only</li>
         </ul>
       </div>
 
@@ -502,8 +502,31 @@ textarea.ai{min-height:56px;resize:vertical}
         <div id="scan-error" style="display:none;margin-top:10px;padding:10px 12px;background:#2a1212;border:1px solid #7a2020;border-radius:8px;font-size:11px;color:#e07070;font-family:monospace;word-break:break-all;"></div>
       </div>
 
-      <p class="terms">By proceeding you accept our <a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a>. The free plan requires no payment details.</p>
+      <p class="terms">By proceeding you accept our <a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a>.</p>
     </div>
+  </div>
+</div>
+
+<!-- ════════ AUTH MODAL ════════ -->
+<div id="auth-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;">
+  <div style="background:var(--charcoal);border:1px solid var(--pewter);border-radius:16px;padding:32px;width:360px;max-width:90vw;">
+    <div style="font-family:var(--serif);font-size:22px;font-weight:300;color:var(--pearl);margin-bottom:4px;" id="auth-modal-title">Create your account</div>
+    <div style="font-size:11px;color:var(--silver);margin-bottom:24px;" id="auth-modal-sub">You'll be taken to payment after registering.</div>
+    <div id="auth-error" style="display:none;background:#2a1212;border:1px solid #7a2020;border-radius:8px;padding:8px 12px;font-size:11px;color:#e07070;margin-bottom:14px;"></div>
+    <div class="fld" style="margin-bottom:12px">
+      <label style="font-size:10px;color:var(--silver);letter-spacing:.5px;text-transform:uppercase;display:block;margin-bottom:6px">Email</label>
+      <input class="inp" id="auth-email" type="email" placeholder="you@yourbusiness.co.uk" style="width:100%;box-sizing:border-box">
+    </div>
+    <div class="fld" style="margin-bottom:20px">
+      <label style="font-size:10px;color:var(--silver);letter-spacing:.5px;text-transform:uppercase;display:block;margin-bottom:6px">Password</label>
+      <input class="inp" id="auth-password" type="password" placeholder="Min. 8 characters" style="width:100%;box-sizing:border-box">
+    </div>
+    <button class="btn btn-gold" id="auth-submit-btn" onclick="submitAuth()" style="width:100%;justify-content:center;margin-bottom:12px">Continue to Payment →</button>
+    <div style="text-align:center;font-size:10px;color:var(--silver)">
+      <span id="auth-toggle-text">Already have an account?</span>
+      <button onclick="toggleAuthMode()" style="background:none;border:none;color:var(--gold);cursor:pointer;font-size:10px;padding:0 4px;" id="auth-toggle-btn">Sign in</button>
+    </div>
+    <button onclick="closeAuthModal()" style="position:absolute;top:16px;right:16px;background:none;border:none;color:var(--silver);cursor:pointer;font-size:18px;">✕</button>
   </div>
 </div>
 
@@ -830,41 +853,118 @@ let adminToken = null;
 let config = {};
 let pendingView = null;
 let services = [];
-let selectedPlan = 'free';
+let selectedPlan = 'essential';
+let authMode = 'register'; // 'register' or 'login'
+let currentUser = null;
 let sessionRefreshInterval = null;
 let lastMessageCount = {};
 
 // ── Init ───────────────────────────────────────────────────────────────────────
 async function init() {
-  try {
-    const r = await fetch('/api/config');
-    config = await r.json();
-    services = [...(config.services || [])];
-    populateAdmin();
-    applyPlanUI(config.plan || 'free');
-    if (config.isLive) {
-      switchView('demo');
-      startChat();
-      if (config.plan === 'paid') document.getElementById('nav-status').classList.add('visible');
-    } else {
-      switchView('setup');
-    }
-  } catch(e) {
-    switchView('setup');
+  // Check if returning from Stripe checkout
+  const params = new URLSearchParams(location.search);
+  if (params.get('checkout') === 'success') {
+    history.replaceState({}, '', '/');
+    showToast('Payment successful — please sign in to continue.');
+    openAuthModal();
+    authMode = 'login';
+    toggleAuthMode();
+    return;
   }
+
+  // Check if already logged in
+  try {
+    const meResp = await fetch('/api/auth/me');
+    const me = await meResp.json();
+    if (me.loggedIn && me.subscribed) {
+      currentUser = me;
+      const r = await fetch('/api/config');
+      config = await r.json();
+      services = [...(config.services || [])];
+      populateAdmin();
+      applyPlanUI(config.plan || 'essential');
+      if (config.isLive) {
+        switchView('demo');
+        startChat();
+      } else {
+        switchView('setup');
+      }
+      return;
+    }
+  } catch(e) {}
+
+  switchView('setup');
 }
 
 // ── Plan selection ─────────────────────────────────────────────────────────────
 function selectPlan(plan) {
   selectedPlan = plan;
-  document.getElementById('plan-free').classList.toggle('selected', plan === 'free');
-  document.getElementById('plan-paid').classList.toggle('selected', plan === 'paid');
-  document.getElementById('notify-section').style.display = plan === 'paid' ? 'block' : 'none';
+  document.getElementById('plan-essential').classList.toggle('selected', plan === 'essential');
+  document.getElementById('plan-professional').classList.toggle('selected', plan === 'professional');
+  document.getElementById('notify-section').style.display = plan === 'professional' ? 'block' : 'none';
   const features = document.getElementById('plan-features-list');
   features.querySelectorAll('li').forEach((li, i) => {
-    if (plan === 'paid') li.classList.remove('muted');
+    if (plan === 'professional') li.classList.remove('muted');
     else li.classList.toggle('muted', i >= 3);
   });
+}
+
+// ── Auth modal ─────────────────────────────────────────────────────────────────
+function openAuthModal() {
+  document.getElementById('auth-modal').style.display = 'flex';
+  document.getElementById('auth-email').focus();
+}
+function closeAuthModal() {
+  document.getElementById('auth-modal').style.display = 'none';
+}
+function toggleAuthMode() {
+  authMode = authMode === 'register' ? 'login' : 'register';
+  const isReg = authMode === 'register';
+  document.getElementById('auth-modal-title').textContent = isReg ? 'Create your account' : 'Sign in';
+  document.getElementById('auth-modal-sub').textContent = isReg ? "You'll be taken to payment after registering." : "Welcome back — sign in to access your admin panel.";
+  document.getElementById('auth-submit-btn').textContent = isReg ? 'Continue to Payment →' : 'Sign in →';
+  document.getElementById('auth-toggle-text').textContent = isReg ? 'Already have an account?' : "Don't have an account?";
+  document.getElementById('auth-toggle-btn').textContent = isReg ? 'Sign in' : 'Register';
+  document.getElementById('auth-error').style.display = 'none';
+}
+async function submitAuth() {
+  const email = document.getElementById('auth-email').value.trim();
+  const password = document.getElementById('auth-password').value;
+  const errEl = document.getElementById('auth-error');
+  errEl.style.display = 'none';
+
+  if (!email || !password) { errEl.textContent = 'Please enter your email and password.'; errEl.style.display = 'block'; return; }
+
+  const endpoint = authMode === 'register' ? '/api/auth/register' : '/api/auth/login';
+  const btn = document.getElementById('auth-submit-btn');
+  btn.disabled = true; btn.textContent = 'Please wait…';
+
+  try {
+    const r = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
+    const data = await r.json();
+    if (!r.ok) { errEl.textContent = data.error || 'Something went wrong.'; errEl.style.display = 'block'; btn.disabled = false; btn.textContent = authMode === 'register' ? 'Continue to Payment →' : 'Sign in →'; return; }
+
+    currentUser = { email, subscribed: data.subscribed };
+
+    if (data.subscribed) {
+      // Already subscribed — go straight to scan/admin
+      closeAuthModal();
+      switchView('setup');
+    } else {
+      // Not subscribed — go to Stripe checkout
+      const checkoutResp = await fetch('/api/checkout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan: selectedPlan, email }) });
+      const checkoutData = await checkoutResp.json();
+      if (checkoutData.url) {
+        window.location.href = checkoutData.url;
+      } else {
+        errEl.textContent = checkoutData.error || 'Payment setup failed.'; errEl.style.display = 'block';
+        btn.disabled = false; btn.textContent = 'Continue to Payment →';
+      }
+    }
+  } catch(e) {
+    errEl.textContent = 'Connection error. Please try again.'; errEl.style.display = 'block';
+    btn.disabled = false; btn.textContent = authMode === 'register' ? 'Continue to Payment →' : 'Sign in →';
+  }
 }
 
 function toggleNotifyMethod(val) {
@@ -1051,8 +1151,14 @@ async function startScan() {
   const url = document.getElementById('url-input').value.trim();
   if (!url) return showToast('Please enter your website URL');
 
-  // If paid plan, validate notify fields
-  if (selectedPlan === 'paid') {
+  // Require login + subscription before scanning
+  if (!currentUser?.subscribed) {
+    openAuthModal();
+    return;
+  }
+
+  // If professional plan, validate notify fields
+  if (selectedPlan === 'professional') {
     const method = document.querySelector('input[name="notify-method"]:checked')?.value || 'sms';
     if (method === 'sms' && !document.getElementById('notify-phone').value.trim()) {
       return showToast('Please enter your mobile number for SMS alerts');

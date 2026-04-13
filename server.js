@@ -9,13 +9,29 @@ const rateLimit = require("express-rate-limit");
 const nodemailer = require("nodemailer");
 const { createEvents } = require("ics");
 const { Pool } = require("pg");
+const bcrypt = require("bcryptjs");
+const session = require("express-session");
+const PgSession = require("connect-pg-simple")(session);
+const Stripe = require("stripe");
+
+const stripe = Stripe(process.env.STRIPE_SECRET_KEY || "");
 
 const app = express();
 const server = http.createServer(app);
 
 app.set("trust proxy", 1);
 app.use(cors());
-app.use(express.json());
+// Raw body needed for Stripe webhooks — must come before express.json()
+app.use((req, res, next) => {
+  if (req.originalUrl === "/webhook") {
+    let data = "";
+    req.setEncoding("utf8");
+    req.on("data", chunk => { data += chunk; });
+    req.on("end", () => { req.rawBody = data; next(); });
+  } else {
+    express.json()(req, res, next);
+  }
+});
 app.use(express.static(path.join(__dirname, "public")));
 
 // ── Rate limiting ─────────────────────────────────────────────────────────────
@@ -45,7 +61,46 @@ async function writeConfig(key, data) {
   `, [key, JSON.stringify(data)]);
 }
 
-// Legacy file helpers — kept for any non-migrated callers, now no-ops
+// ── Sessions ──────────────────────────────────────────────────────────────────
+app.use(session({
+  store: new PgSession({ pool: db, tableName: "gloria_sessions", createTableIfMissing: true }),
+  secret: process.env.SESSION_SECRET || "gloria-secret-change-me",
+  resave: false,
+  saveUninitialized: false,
+  cookie: { secure: process.env.NODE_ENV === "production", maxAge: 7 * 24 * 60 * 60 * 1000 },
+}));
+
+// ── Auth helpers ──────────────────────────────────────────────────────────────
+async function getUserById(id) {
+  const r = await db.query("SELECT * FROM gloria_users WHERE id=$1", [id]);
+  return r.rows[0] || null;
+}
+async function getUserByEmail(email) {
+  const r = await db.query("SELECT * FROM gloria_users WHERE email=$1", [email.toLowerCase()]);
+  return r.rows[0] || null;
+}
+async function getPrepaid(email) {
+  const r = await db.query("SELECT * FROM gloria_prepaid WHERE email=$1", [email.toLowerCase()]);
+  return r.rows[0] || null;
+}
+
+// Middleware: load current user from session
+app.use(async (req, res, next) => {
+  req.user = req.session?.userId ? await getUserById(req.session.userId).catch(() => null) : null;
+  next();
+});
+
+function requireAuth(req, res, next) {
+  if (!req.user) return res.status(401).json({ error: "Login required." });
+  next();
+}
+function requireSubscription(req, res, next) {
+  if (!req.user) return res.redirect("/");
+  if (!req.user.is_subscribed) return res.redirect("/subscribe");
+  next();
+}
+
+// ── Legacy file helpers — no-ops now using DB ─────────────────────────────────
 const DATA_FILE = "db:main";
 const BOOKINGS_FILE = "db:bookings";
 function readData(file, fallback) { return fallback; }
@@ -422,6 +477,160 @@ async function getOutlookAvailability(cfg, date) {
   return data.value || [];
 }
 
+// ── AUTH ROUTES ───────────────────────────────────────────────────────────────
+const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
+
+// Gloria plan price IDs — set these in Stripe and add to Render env vars
+const STRIPE_PRICE_ESSENTIAL  = process.env.STRIPE_PRICE_ESSENTIAL;   // £25/mo
+const STRIPE_PRICE_PROFESSIONAL = process.env.STRIPE_PRICE_PROFESSIONAL; // £50/mo
+
+// Register
+app.post("/api/auth/register", async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) return res.status(400).json({ error: "Email and password required." });
+  if (password.length < 8) return res.status(400).json({ error: "Password must be at least 8 characters." });
+  try {
+    const existing = await getUserByEmail(email);
+    if (existing) return res.status(409).json({ error: "An account with that email already exists." });
+
+    const hash = await bcrypt.hash(password, 12);
+    const prepaid = await getPrepaid(email);
+
+    let result;
+    if (prepaid) {
+      // User paid before registering — activate subscription immediately
+      result = await db.query(
+        "INSERT INTO gloria_users (email, password_hash, stripe_customer_id, is_subscribed, plan) VALUES ($1,$2,$3,true,$4) RETURNING *",
+        [email.toLowerCase(), hash, prepaid.stripe_customer_id, prepaid.plan]
+      );
+      await db.query("DELETE FROM gloria_prepaid WHERE email=$1", [email.toLowerCase()]);
+    } else {
+      result = await db.query(
+        "INSERT INTO gloria_users (email, password_hash) VALUES ($1,$2) RETURNING *",
+        [email.toLowerCase(), hash]
+      );
+    }
+
+    const user = result.rows[0];
+    req.session.userId = user.id;
+    res.json({ ok: true, subscribed: user.is_subscribed });
+  } catch (e) {
+    console.error("[Register]", e.message);
+    res.status(500).json({ error: "Registration failed." });
+  }
+});
+
+// Login
+app.post("/api/auth/login", async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) return res.status(400).json({ error: "Email and password required." });
+  try {
+    const user = await getUserByEmail(email);
+    if (!user || !(await bcrypt.compare(password, user.password_hash))) {
+      return res.status(401).json({ error: "Invalid email or password." });
+    }
+    req.session.userId = user.id;
+    res.json({ ok: true, subscribed: user.is_subscribed });
+  } catch (e) {
+    res.status(500).json({ error: "Login failed." });
+  }
+});
+
+// Logout
+app.post("/api/auth/logout", (req, res) => {
+  req.session.destroy(() => res.json({ ok: true }));
+});
+
+// Current user status
+app.get("/api/auth/me", (req, res) => {
+  if (!req.user) return res.json({ loggedIn: false });
+  res.json({ loggedIn: true, email: req.user.email, subscribed: req.user.is_subscribed, plan: req.user.plan });
+});
+
+// ── Stripe Checkout ───────────────────────────────────────────────────────────
+app.post("/api/checkout", async (req, res) => {
+  const { plan, email } = req.body;
+  if (!plan || !email) return res.status(400).json({ error: "plan and email required." });
+
+  const priceId = plan === "professional" ? STRIPE_PRICE_PROFESSIONAL : STRIPE_PRICE_ESSENTIAL;
+  if (!priceId) return res.status(500).json({ error: `Stripe price ID not configured for plan: ${plan}` });
+
+  // Prevent double-charging
+  if (req.user?.is_subscribed) return res.status(400).json({ error: "Already subscribed." });
+
+  try {
+    const session = await stripe.checkout.sessions.create({
+      mode: "subscription",
+      payment_method_types: ["card"],
+      customer_email: email,
+      line_items: [{ price: priceId, quantity: 1 }],
+      success_url: `${BASE_URL}/?checkout=success`,
+      cancel_url: `${BASE_URL}/`,
+      metadata: { plan, email },
+    });
+    res.json({ url: session.url });
+  } catch (e) {
+    console.error("[Checkout]", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Stripe Webhook ────────────────────────────────────────────────────────────
+app.post("/webhook", async (req, res) => {
+  const sig = req.headers["stripe-signature"];
+  const secret = process.env.STRIPE_WEBHOOK_SECRET;
+  let event;
+
+  try {
+    event = stripe.webhooks.constructEvent(req.rawBody, sig, secret);
+  } catch (e) {
+    console.error("[Webhook] Signature failed:", e.message);
+    return res.status(400).send("Invalid signature");
+  }
+
+  if (event.type === "checkout.session.completed") {
+    const s = event.data.object;
+    const customerEmail = s.customer_details?.email || s.customer_email;
+    const customerId = s.customer;
+    const plan = s.metadata?.plan || "essential";
+
+    if (!customerEmail) return res.status(400).send("No email");
+
+    try {
+      const existing = await getUserByEmail(customerEmail);
+      if (existing) {
+        await db.query("UPDATE gloria_users SET is_subscribed=true, stripe_customer_id=$1, plan=$2 WHERE id=$3",
+          [customerId, plan, existing.id]);
+      } else {
+        // Store as prepaid — they'll register after
+        await db.query(`
+          INSERT INTO gloria_prepaid (email, stripe_customer_id, plan) VALUES ($1,$2,$3)
+          ON CONFLICT (email) DO UPDATE SET stripe_customer_id=$2, plan=$3
+        `, [customerEmail.toLowerCase(), customerId, plan]);
+      }
+      console.log("[Webhook] checkout.session.completed for", customerEmail);
+    } catch (e) {
+      console.error("[Webhook] DB error:", e.message);
+      return res.status(500).send("DB error");
+    }
+  }
+
+  if (event.type === "customer.subscription.deleted") {
+    const customerId = event.data.object.customer;
+    try {
+      await db.query("UPDATE gloria_users SET is_subscribed=false WHERE stripe_customer_id=$1", [customerId]);
+      console.log("[Webhook] Subscription cancelled for customer", customerId);
+    } catch (e) {
+      console.error("[Webhook] DB error on cancel:", e.message);
+    }
+  }
+
+  res.sendStatus(200);
+});
+
+// Serve auth/subscribe page
+app.get("/subscribe", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
+
 // ── ROUTES ────────────────────────────────────────────────────────────────────
 
 // Public config
@@ -443,12 +652,15 @@ app.post("/api/admin/login", async (req, res) => {
 });
 
 async function requireAdmin(req, res, next) {
+  // Accept session-based auth (subscribed user)
+  if (req.user?.is_subscribed) return next();
+  // Also accept legacy bearer token for the admin panel
   const cfg = (await readConfig(MAIN_CONFIG_KEY)) || DEFAULT_CONFIG;
   const pw = cfg.adminPassword || process.env.ADMIN_PASSWORD || "slick2024";
   const expected = Buffer.from(pw).toString("base64");
   const auth = req.headers.authorization?.replace("Bearer ", "");
-  if (auth !== expected) return res.status(403).json({ error: "Forbidden." });
-  next();
+  if (auth === expected) return next();
+  return res.status(403).json({ error: "Forbidden — login required." });
 }
 
 app.get("/api/admin/config", requireAdmin, async (req, res) => {
