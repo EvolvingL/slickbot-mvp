@@ -733,17 +733,53 @@ textarea.ai{min-height:56px;resize:vertical}
             <span class="section-caret" id="caret-missedcall">▾</span>
           </div>
           <div class="section-body" id="sec-missedcall" style="display:none">
-            <p style="font-size:10px;color:var(--ash);line-height:1.8;margin-bottom:12px">When a customer calls your Twilio number and you don't answer, Gloria picks up after ~10 seconds, plays this message, then immediately texts them a link to the chat window.</p>
-            <div class="field" style="margin-bottom:10px">
+            <p style="font-size:10px;color:var(--ash);line-height:1.8;margin-bottom:12px">When a customer calls your Twilio number and you don't answer, Gloria picks up after ~10 seconds, plays your message, then immediately texts the caller a link to the chat window.</p>
+
+            <div class="field" style="margin-bottom:12px">
               <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:11px;color:var(--silver)">
                 <input type="checkbox" id="f-missedCallEnabled" style="accent-color:var(--gold);width:13px;height:13px"> Enable missed call intercept
               </label>
             </div>
-            <div class="field">
-              <label>Voicemail message</label>
-              <textarea class="ai" id="f-missedCallMessage" style="min-height:72px" placeholder="Thanks for calling — we're just on a job at the minute, but I'm going to send you a link to our receptionist so you can ask any questions and book us out."></textarea>
+
+            <!-- Recording UI -->
+            <div style="font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--gold);margin-bottom:8px;font-weight:500">Voicemail recording</div>
+
+            <!-- Recorded state (shown when recording saved) -->
+            <div id="mc-recorded" style="display:none;background:var(--graphite);border:1px solid var(--pewter);border-radius:var(--r);padding:10px 12px;margin-bottom:10px">
+              <div style="display:flex;align-items:center;gap:10px">
+                <div style="width:7px;height:7px;border-radius:50%;background:var(--green);flex-shrink:0"></div>
+                <span style="font-size:11px;color:var(--pearl);flex:1">Recording saved</span>
+                <button class="btn btn-ghost btn-sm" onclick="playVoicemailRecording()" id="mc-play-btn">▶ Play</button>
+                <button class="btn btn-danger btn-sm" onclick="deleteVoicemailRecording()">Delete</button>
+              </div>
+              <audio id="mc-audio-player" style="display:none"></audio>
             </div>
-            <div style="background:var(--charcoal);border:1px solid var(--pewter);border-radius:var(--r);padding:10px 12px;margin-top:4px">
+
+            <!-- Record controls (shown when no recording) -->
+            <div id="mc-record-controls" style="margin-bottom:10px">
+              <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+                <button class="btn btn-ghost btn-sm" id="mc-record-btn" onclick="toggleVoicemailRecording()" style="flex:1;justify-content:center">
+                  <span id="mc-record-icon">⏺</span> <span id="mc-record-label">Record message</span>
+                </button>
+              </div>
+              <div id="mc-record-status" style="font-size:10px;color:var(--ash);min-height:16px"></div>
+              <!-- Preview before saving -->
+              <div id="mc-preview-wrap" style="display:none;margin-top:8px">
+                <audio id="mc-preview-audio" controls style="width:100%;height:32px;accent-color:var(--gold)"></audio>
+                <div style="display:flex;gap:6px;margin-top:8px">
+                  <button class="btn btn-ghost btn-sm" onclick="discardVoicemailRecording()" style="flex:1;justify-content:center">Discard</button>
+                  <button class="btn btn-gold btn-sm" onclick="saveVoicemailRecording()" style="flex:1;justify-content:center">Save recording</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Fallback text (used if no recording saved) -->
+            <div class="field">
+              <label>Fallback text message <span style="color:var(--ash);font-weight:400;text-transform:none;letter-spacing:0">(used if no recording saved)</span></label>
+              <textarea class="ai" id="f-missedCallMessage" style="min-height:64px" placeholder="Thanks for calling — we're just on a job at the minute, but I'm going to send you a link to our receptionist so you can ask any questions and book us out."></textarea>
+            </div>
+
+            <div style="background:var(--charcoal);border:1px solid var(--pewter);border-radius:var(--r);padding:10px 12px;margin-top:8px">
               <div style="font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--gold);margin-bottom:6px;font-weight:500">Twilio setup</div>
               <p style="font-size:10px;color:var(--ash);line-height:1.8">In your <strong style="color:var(--silver)">Twilio Console</strong>, set the webhook for your phone number's incoming calls to:</p>
               <code id="missed-call-webhook-url" style="display:block;margin:6px 0;font-size:10px;color:var(--gold);word-break:break-all;background:var(--graphite);padding:6px 8px;border-radius:var(--r);border:1px solid var(--pewter)"></code>
@@ -1633,6 +1669,10 @@ function populateAdmin() {
   // Webhook URL display
   const webhookEl = document.getElementById('missed-call-webhook-url');
   if (webhookEl) webhookEl.textContent = (window.location.origin) + '/voice/inbound';
+  // Recording UI state
+  if (document.getElementById('mc-recorded')) {
+    updateVoicemailUI(!!config.hasVoicemailRecording);
+  }
 
   const bizName = document.getElementById('chat-biz-name');
   if (bizName) bizName.textContent = config.bizName || '—';
@@ -1709,6 +1749,129 @@ async function testNotify() {
   });
   const d = await r.json();
   showToast(d.ok ? 'Test notification sent' : `Could not send: ${d.reason || 'check configuration'}`);
+}
+
+// ── Voicemail recording ────────────────────────────────────────────────────────
+let _vmMediaRecorder = null;
+let _vmChunks = [];
+let _vmBlob = null;
+
+function updateVoicemailUI(hasRecording) {
+  document.getElementById('mc-recorded').style.display = hasRecording ? 'block' : 'none';
+  document.getElementById('mc-record-controls').style.display = hasRecording ? 'none' : 'block';
+  document.getElementById('mc-preview-wrap').style.display = 'none';
+  document.getElementById('mc-record-status').textContent = '';
+  _vmBlob = null;
+  _vmChunks = [];
+  if (_vmMediaRecorder && _vmMediaRecorder.state !== 'inactive') {
+    _vmMediaRecorder.stop();
+    _vmMediaRecorder = null;
+  }
+  document.getElementById('mc-record-btn').classList.remove('btn-danger');
+  document.getElementById('mc-record-icon').textContent = '⏺';
+  document.getElementById('mc-record-label').textContent = 'Record message';
+}
+
+async function toggleVoicemailRecording() {
+  if (_vmMediaRecorder && _vmMediaRecorder.state === 'recording') {
+    // Stop recording
+    _vmMediaRecorder.stop();
+    return;
+  }
+  // Start recording
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const mimeType = MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4'
+                   : MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus'
+                   : 'audio/webm';
+    _vmMediaRecorder = new MediaRecorder(stream, { mimeType });
+    _vmChunks = [];
+
+    _vmMediaRecorder.ondataavailable = e => { if (e.data.size > 0) _vmChunks.push(e.data); };
+
+    _vmMediaRecorder.onstop = () => {
+      stream.getTracks().forEach(t => t.stop());
+      _vmBlob = new Blob(_vmChunks, { type: _vmMediaRecorder.mimeType });
+      const url = URL.createObjectURL(_vmBlob);
+      const preview = document.getElementById('mc-preview-audio');
+      preview.src = url;
+      document.getElementById('mc-preview-wrap').style.display = 'block';
+      document.getElementById('mc-record-status').textContent = 'Recording complete — listen back, then save or discard.';
+      document.getElementById('mc-record-btn').classList.remove('btn-danger');
+      document.getElementById('mc-record-icon').textContent = '⏺';
+      document.getElementById('mc-record-label').textContent = 'Record again';
+    };
+
+    _vmMediaRecorder.start();
+    document.getElementById('mc-record-btn').classList.add('btn-danger');
+    document.getElementById('mc-record-icon').textContent = '⏹';
+    document.getElementById('mc-record-label').textContent = 'Stop recording';
+    document.getElementById('mc-record-status').textContent = 'Recording… speak now.';
+    document.getElementById('mc-preview-wrap').style.display = 'none';
+  } catch (err) {
+    document.getElementById('mc-record-status').textContent = 'Microphone access denied — please allow microphone in your browser.';
+  }
+}
+
+function discardVoicemailRecording() {
+  _vmBlob = null;
+  _vmChunks = [];
+  document.getElementById('mc-preview-wrap').style.display = 'none';
+  document.getElementById('mc-record-status').textContent = '';
+  document.getElementById('mc-record-icon').textContent = '⏺';
+  document.getElementById('mc-record-label').textContent = 'Record message';
+}
+
+async function saveVoicemailRecording() {
+  if (!_vmBlob) return;
+  const btn = document.querySelector('[onclick="saveVoicemailRecording()"]');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  try {
+    const reader = new FileReader();
+    reader.onload = async () => {
+      // Strip the data URL prefix to get pure base64
+      const base64 = reader.result.split(',')[1];
+      const r = await fetch('/api/admin/voicemail-recording', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ data: base64, mimeType: _vmBlob.type }),
+      });
+      if (r.ok) {
+        showToast('Recording saved — Twilio will play this on missed calls.');
+        updateVoicemailUI(true);
+      } else {
+        showToast('Could not save recording — please try again.');
+        if (btn) { btn.disabled = false; btn.textContent = 'Save recording'; }
+      }
+    };
+    reader.readAsDataURL(_vmBlob);
+  } catch {
+    if (btn) { btn.disabled = false; btn.textContent = 'Save recording'; }
+    showToast('Error saving recording.');
+  }
+}
+
+async function deleteVoicemailRecording() {
+  if (!confirm('Delete this recording? The fallback text message will be used instead.')) return;
+  const r = await fetch('/api/admin/voicemail-recording', { method: 'DELETE', credentials: 'include' });
+  if (r.ok) {
+    showToast('Recording deleted — fallback text will be used.');
+    updateVoicemailUI(false);
+  }
+}
+
+function playVoicemailRecording() {
+  const audio = document.getElementById('mc-audio-player');
+  if (audio.paused) {
+    audio.src = '/api/voicemail-recording?t=' + Date.now();
+    audio.play();
+    document.getElementById('mc-play-btn').textContent = '⏸ Pause';
+    audio.onended = () => { document.getElementById('mc-play-btn').textContent = '▶ Play'; };
+  } else {
+    audio.pause();
+    document.getElementById('mc-play-btn').textContent = '▶ Play';
+  }
 }
 
 // ── Chat ───────────────────────────────────────────────────────────────────────

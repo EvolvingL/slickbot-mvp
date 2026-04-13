@@ -653,7 +653,9 @@ app.get("/subscribe", (req, res) => res.sendFile(path.join(__dirname, "public", 
 // Public config
 app.get("/api/config", async (req, res) => {
   const cfg = (await readConfig(MAIN_CONFIG_KEY)) || DEFAULT_CONFIG;
-  const { adminPassword, smtpPass, twilioToken, googleTokens, outlookTokens, ...pub } = cfg;
+  const { adminPassword, smtpPass, twilioToken, googleTokens, outlookTokens, voicemailRecording, ...pub } = cfg;
+  // Tell the client whether a recording exists without sending the blob
+  pub.hasVoicemailRecording = !!voicemailRecording;
   res.json(pub);
 });
 
@@ -1402,41 +1404,67 @@ app.post("/api/voice/speak", async (req, res) => {
   }
 });
 
+// ── Voicemail recording: upload, serve, delete ───────────────────────────────
+
+// Serve the raw audio so Twilio can <Play> it (no auth — Twilio fetches this publicly)
+app.get("/api/voicemail-recording", async (req, res) => {
+  const cfg = (await readConfig(MAIN_CONFIG_KEY)) || DEFAULT_CONFIG;
+  if (!cfg.voicemailRecording) return res.status(404).end();
+  const { data, mimeType } = cfg.voicemailRecording;
+  const buf = Buffer.from(data, "base64");
+  res.setHeader("Content-Type", mimeType || "audio/webm");
+  res.setHeader("Content-Length", buf.length);
+  res.send(buf);
+});
+
+// Upload recording from admin panel (base64 body, ~100-300 KB)
+app.post("/api/admin/voicemail-recording", requireAdmin, express.json({ limit: "2mb" }), async (req, res) => {
+  const { data, mimeType } = req.body;
+  if (!data) return res.status(400).json({ error: "data required" });
+  const cfg = (await readConfig(MAIN_CONFIG_KEY)) || DEFAULT_CONFIG;
+  await writeConfig(MAIN_CONFIG_KEY, { ...cfg, voicemailRecording: { data, mimeType: mimeType || "audio/webm" } });
+  res.json({ ok: true });
+});
+
+// Delete recording — revert to TTS
+app.delete("/api/admin/voicemail-recording", requireAdmin, async (req, res) => {
+  const cfg = (await readConfig(MAIN_CONFIG_KEY)) || DEFAULT_CONFIG;
+  const updated = { ...cfg };
+  delete updated.voicemailRecording;
+  await writeConfig(MAIN_CONFIG_KEY, updated);
+  res.json({ ok: true });
+});
+
 // ── Missed call intercept (Twilio inbound webhook) ────────────────────────────
-// Twilio calls this URL when someone rings the business's Twilio number.
-// We answer immediately, pause ~15 s (half the ~30 s ring cycle that feels natural),
-// play the voicemail message, hang up, then fire the SMS/email follow-up.
 app.post("/voice/inbound", async (req, res) => {
   const cfg = (await readConfig(MAIN_CONFIG_KEY)) || DEFAULT_CONFIG;
 
-  // Guard: if the feature is disabled, fall through to normal ringing (no-op TwiML)
   if (!cfg.missedCallEnabled) {
     res.setHeader("Content-Type", "text/xml");
     return res.send(`<?xml version="1.0" encoding="UTF-8"?><Response></Response>`);
   }
 
   const callerNumber = req.body.From || req.body.Caller || "";
+  const chatLink = `${BASE_URL}/chat?key=${MAIN_CONFIG_KEY}`;
+
+  // If a custom recording exists, <Play> it — otherwise fall back to Polly TTS
+  const playUrl = cfg.voicemailRecording ? `${BASE_URL}/api/voicemail-recording` : null;
   const msg = cfg.missedCallMessage ||
     "Thanks for calling — we're just on a job at the minute, but I'm going to send you a link to our receptionist so you can ask any questions and book us out.";
 
-  // Build the Gloria chat URL — uses the public BASE_URL
-  const chatLink = `${BASE_URL}/chat?key=${MAIN_CONFIG_KEY}`;
+  const audioVerb = playUrl
+    ? `<Play>${escapeXml(playUrl)}</Play>`
+    : `<Say voice="Polly.Amy-Neural" language="en-GB">${escapeXml(msg)}</Say>`;
 
-  // Respond with TwiML:
-  //  - <Pause> 15 seconds so it feels like they rang before voicemail picked up
-  //  - <Say> the message using Amazon Polly Amy (natural British female, built into Twilio)
-  //  - <Hangup> ends the call cleanly
-  // After responding we fire the SMS asynchronously (can't do it before responding or Twilio times out)
   res.setHeader("Content-Type", "text/xml");
   res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Pause length="10"/>
-  <Say voice="Polly.Amy-Neural" language="en-GB">${escapeXml(msg)}</Say>
+  ${audioVerb}
   <Pause length="1"/>
   <Hangup/>
 </Response>`);
 
-  // Fire-and-forget: send the follow-up message after TwiML is sent
   if (callerNumber) {
     sendMissedCallFollowUp({ cfg, callerNumber, chatLink }).catch(err =>
       console.error("[MissedCall] Follow-up failed:", err.message)
