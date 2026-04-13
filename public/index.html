@@ -508,7 +508,7 @@ textarea.ai{min-height:56px;resize:vertical}
 </div>
 
 <!-- ════════ AUTH MODAL ════════ -->
-<div id="auth-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.7);align-items:center;justify-content:center;">
+<div id="auth-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.7);align-items:center;justify-content:center;" hidden>
   <div style="position:relative;background:var(--charcoal);border:1px solid var(--pewter);border-radius:16px;padding:32px;width:360px;max-width:90vw;">
 
     <!-- Step 1: Checkout (email only) -->
@@ -948,11 +948,15 @@ function selectPlan(plan) {
 // ── Auth modal ─────────────────────────────────────────────────────────────────
 function openAuthModal() {
   showCheckoutStep();
-  document.getElementById('auth-modal').style.display = 'flex';
+  const m = document.getElementById('auth-modal');
+  m.removeAttribute('hidden');
+  m.style.display = 'flex';
   document.getElementById('auth-email').focus();
 }
 function closeAuthModal() {
-  document.getElementById('auth-modal').style.display = 'none';
+  const m = document.getElementById('auth-modal');
+  m.style.display = 'none';
+  m.setAttribute('hidden', '');
 }
 function showCheckoutStep() {
   document.getElementById('auth-step-checkout').style.display = 'block';
@@ -964,8 +968,10 @@ function showRegisterStep(email) {
   document.getElementById('auth-step-register').style.display = 'block';
   document.getElementById('auth-step-login').style.display = 'none';
   document.getElementById('register-email').value = email || '';
+  const m = document.getElementById('auth-modal');
+  m.removeAttribute('hidden');
+  m.style.display = 'flex';
   document.getElementById('register-password').focus();
-  document.getElementById('auth-modal').style.display = 'flex';
 }
 function showLoginStep() {
   document.getElementById('auth-step-checkout').style.display = 'none';
